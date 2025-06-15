@@ -237,7 +237,7 @@ def get_room_service():
 # Expose singleton room_service
 room_service = get_room_service()
 
-def generate_token(identity: str, room: str) -> str:
+def generate_token(identity: str, room: str, name: str = None) -> str:
     """
     Generate a JWT token for a participant to join a specific LiveKit room.
     """
@@ -251,10 +251,11 @@ def generate_token(identity: str, room: str) -> str:
         token = (
                 api.AccessToken(api_key=cfg['LIVEKIT_API_KEY'], api_secret=cfg['LIVEKIT_API_SECRET'])
             .with_identity(identity)
+            .with_name(name)  # Set the participant's display name
             .with_grants(grants)
             .to_jwt()
         )
-        logger.debug(f"Generated token for identity={identity}, room={room}")
+        logger.debug(f"Generated token for identity={identity}, room={room}, name={name}")
         return token
     except Exception as e:
         logger.error(f"Failed to generate token: {e}")

@@ -85,11 +85,12 @@ def delete_room_endpoint(room_name):
 def get_token():
     """
     Generate an access token for joining a LiveKit room.
-    Expects JSON: { 'identity': str, 'room': str }
+    Expects JSON: { 'identity': str, 'room': str, 'name': str }
     """
     data = request.get_json() or {}
     identity = data.get('identity')
     room = data.get('room')
+    name = data.get('name')
 
     if not identity or not room:
         return jsonify({
@@ -98,11 +99,12 @@ def get_token():
         }), 400
 
     try:
-        token = generate_token(identity, room)
+        token = generate_token(identity, room, name)
         return jsonify({
             'token': token, 
             'identity': identity,
             'room': room,
+            'name': name,
             'status': 'success'
         }), 200
     except Exception as e:

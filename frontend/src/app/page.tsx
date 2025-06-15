@@ -1,10 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { TutorCard } from '@/components/TutorCard';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+
+interface StoredSession {
+  roomId: string;
+  participantName: string;
+  subject: string;
+  tutorName: string;
+  timestamp: number; 
+}
 
 const tutors = [
   {
@@ -60,7 +68,38 @@ const tutors = [
 export default function Home() {
   const [participantName, setParticipantName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [storedSessions, setStoredSessions] = useState<StoredSession[]>([]);
   const router = useRouter();
+
+  useEffect(() => {
+    try {
+      const savedSessions = localStorage.getItem('tutoringSessions');
+      if (savedSessions) {
+        setStoredSessions(JSON.parse(savedSessions));
+      }
+    } catch (error) {
+      console.error("Failed to load sessions from localStorage:", error);
+      setStoredSessions([]);
+    }
+  }, []);
+
+  const saveSessions = (sessions: StoredSession[]) => {
+    try {
+      localStorage.setItem('tutoringSessions', JSON.stringify(sessions));
+      setStoredSessions(sessions);
+    } catch (error) {
+      console.error("Failed to save sessions to localStorage:", error);
+    }
+  };
+
+  const handleRejoinSession = (session: StoredSession) => {
+    if (session.participantName) {
+      setParticipantName(session.participantName);
+    }
+    // Remove temp session data, as we are rejoining a specific room
+    sessionStorage.removeItem('temp-session-data'); 
+    router.push(`/room/${session.roomId}`);
+  };
 
   const handleBookSession = async (tutorName: string, subject: string) => {
     if (!participantName) {
@@ -68,58 +107,35 @@ export default function Home() {
       return;
     }
 
-    setIsLoading(true);
-    const roomName = subject.replace(/\s+/g, '-').toLowerCase(); // Subject as room name
-    const metadata = tutorName; // Tutor name as metadata
+    const existingSession = storedSessions.find(
+      (s) => s.tutorName === tutorName && s.subject === subject && s.participantName === participantName
+    );
 
-    try {
-      // 1. Create the LiveKit Room
-      const createRoomResponse = await fetch('/api/livekit/rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          room: roomName,
-          max_participants: 2,
-          metadata: metadata,
-        }),
-      });
-
-      if (!createRoomResponse.ok) {
-        const errorData = await createRoomResponse.json();
-        throw new Error(errorData.error || 'Failed to create room');
+    if (existingSession) {
+      const confirmRejoin = confirm(
+        `You have an existing session with ${tutorName} for ${subject} as ${participantName}. Do you want to rejoin this session?`
+      );
+      if (confirmRejoin) {
+        handleRejoinSession(existingSession);
+        return;
       }
-      console.log('Room created successfully!', await createRoomResponse.json());
-
-      // 2. Get LiveKit Token for the participant
-      const getTokenResponse = await fetch('/api/livekit/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          identity: participantName, // Use participant's name as identity
-          room: roomName,
-        }),
-      });
-
-      if (!getTokenResponse.ok) {
-        const errorData = await getTokenResponse.json();
-        throw new Error(errorData.error || 'Failed to get token');
-      }
-      const { token } = await getTokenResponse.json();
-
-      // 3. Store necessary info and navigate to the room
-      sessionStorage.setItem('livekit-token', token);
-      sessionStorage.setItem('livekit-room', roomName);
-      sessionStorage.setItem('livekit-participant', participantName);
-      sessionStorage.setItem('livekit-wsurl', process.env.NEXT_PUBLIC_LIVEKIT_WS_URL || 'ws://localhost:7880'); // Make sure to set this env var!
-
-      router.push(`/room/${roomName}`);
-
-    } catch (error) {
-      console.error('Error booking session:', error);
-      alert(`Failed to book session: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsLoading(false);
     }
+
+    setIsLoading(true);
+
+    // Pass subject, tutorName, and participantName as query parameters
+    const queryParams = new URLSearchParams({
+      tutorName: tutorName,
+      subject: subject,
+      participantName: participantName,
+      isNew: 'true' // Indicate this is a new session flow
+    }).toString();
+    
+    // Navigate to a temporary roomId (subject) which the room page will use to generate a unique one
+    const subjectIdentifier = subject.replace(/\s+/g, '-').toLowerCase();
+    router.push(`/room/${subjectIdentifier}?${queryParams}`);
+
+    setIsLoading(false);
   };
 
   return (
@@ -143,6 +159,28 @@ export default function Home() {
             />
           </div>
         </div>
+
+        {storedSessions.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-3xl font-bold text-gray-900 mb-6 text-center">
+              Your Previous Sessions
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {storedSessions.map((session) => (
+                <div key={session.roomId} className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-xl font-semibold mb-2">{session.subject} with {session.tutorName}</h3>
+                  <p className="text-gray-600 mb-4">As: {session.participantName}</p>
+                  <Button
+                    onClick={() => handleRejoinSession(session)}
+                    disabled={isLoading}
+                  >
+                    Rejoin Session
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {tutors.map((tutor) => (
