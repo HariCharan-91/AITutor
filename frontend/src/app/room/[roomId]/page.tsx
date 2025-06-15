@@ -1,6 +1,6 @@
 'use client';
 
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   LiveKitRoom,
@@ -12,13 +12,21 @@ import {
   useTracks,
 } from '@livekit/components-react';
 import '@livekit/components-styles';
-import { Track } from 'livekit-client';
+import { Track, RoomEvent } from 'livekit-client';
+
+// Generate a unique ID for each session
+const generateUniqueId = () => {
+  return 'user_' + Math.random().toString(36).substring(2, 9);
+};
 
 const RoomPage = () => {
   const params = useParams() as { roomId: string };
+  const router = useRouter();
   const roomId = params.roomId;
   const [token, setToken] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [userId] = useState(() => generateUniqueId());
 
   useEffect(() => {
     const fetchToken = async () => {
@@ -30,7 +38,7 @@ const RoomPage = () => {
           },
           body: JSON.stringify({
             room: roomId,
-            identity: 'user', // Changed from 'participant' to 'identity' to match backend
+            identity: userId,
           }),
         });
         
@@ -43,13 +51,23 @@ const RoomPage = () => {
         setToken(data.token);
       } catch (error) {
         console.error('Error fetching token:', error);
+        setError(error instanceof Error ? error.message : 'Failed to join room');
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchToken();
-  }, [roomId]);
+  }, [roomId, userId]);
+
+  const handleDisconnect = () => {
+    router.push('/');
+  };
+
+  const handleError = (error: Error) => {
+    console.error('LiveKit error:', error);
+    setError(error.message);
+  };
 
   if (isLoading) {
     return (
@@ -59,10 +77,18 @@ const RoomPage = () => {
     );
   }
 
-  if (!token) {
+  if (error || !token) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-xl text-red-500">Failed to join room</div>
+        <div className="text-xl text-red-500">
+          {error || 'Failed to join room'}
+          <button 
+            onClick={() => router.push('/')}
+            className="block mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Return to Home
+          </button>
+        </div>
       </div>
     );
   }
@@ -74,9 +100,20 @@ const RoomPage = () => {
         serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL || 'ws://localhost:7880'}
         video={true}
         audio={true}
+        onDisconnected={handleDisconnect}
+        onError={handleError}
+        options={{
+          adaptiveStream: true,
+          dynacast: true,
+          publishDefaults: {
+            simulcast: true,
+          },
+        }}
       >
         <div className="h-screen">
-          <VideoConference />
+          <VideoConference
+            className="h-full"
+          />
           <RoomAudioRenderer />
         </div>
       </LiveKitRoom>
