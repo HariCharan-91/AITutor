@@ -1,6 +1,10 @@
 'use client';
 
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { TutorCard } from '@/components/TutorCard';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
 
 const tutors = [
   {
@@ -54,6 +58,70 @@ const tutors = [
 ];
 
 export default function Home() {
+  const [participantName, setParticipantName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
+
+  const handleBookSession = async (tutorName: string, subject: string) => {
+    if (!participantName) {
+      alert("Please enter your name before booking a session.");
+      return;
+    }
+
+    setIsLoading(true);
+    const roomName = subject.replace(/\s+/g, '-').toLowerCase(); // Subject as room name
+    const metadata = tutorName; // Tutor name as metadata
+
+    try {
+      // 1. Create the LiveKit Room
+      const createRoomResponse = await fetch('/api/livekit/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          room: roomName,
+          max_participants: 2,
+          metadata: metadata,
+        }),
+      });
+
+      if (!createRoomResponse.ok) {
+        const errorData = await createRoomResponse.json();
+        throw new Error(errorData.error || 'Failed to create room');
+      }
+      console.log('Room created successfully!', await createRoomResponse.json());
+
+      // 2. Get LiveKit Token for the participant
+      const getTokenResponse = await fetch('/api/livekit/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identity: participantName, // Use participant's name as identity
+          room: roomName,
+        }),
+      });
+
+      if (!getTokenResponse.ok) {
+        const errorData = await getTokenResponse.json();
+        throw new Error(errorData.error || 'Failed to get token');
+      }
+      const { token } = await getTokenResponse.json();
+
+      // 3. Store necessary info and navigate to the room
+      sessionStorage.setItem('livekit-token', token);
+      sessionStorage.setItem('livekit-room', roomName);
+      sessionStorage.setItem('livekit-participant', participantName);
+      sessionStorage.setItem('livekit-wsurl', process.env.NEXT_PUBLIC_LIVEKIT_WS_URL || 'ws://localhost:7880'); // Make sure to set this env var!
+
+      router.push(`/room/${roomName}`);
+
+    } catch (error) {
+      console.error('Error booking session:', error);
+      alert(`Failed to book session: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -64,6 +132,16 @@ export default function Home() {
           <p className="text-lg text-gray-600">
             Connect with expert tutors for personalized learning sessions
           </p>
+          <div className="mt-6 w-full max-w-md mx-auto">
+            <Input
+              label="Your Name (for session)"
+              value={participantName}
+              onChange={(e) => setParticipantName(e.target.value)}
+              placeholder="Enter your name"
+              required
+              disabled={isLoading}
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -76,6 +154,7 @@ export default function Home() {
               reviews={tutor.reviews}
               sessions={tutor.sessions}
               imageUrl={tutor.imageUrl}
+              onBookSession={handleBookSession}
             />
           ))}
         </div>

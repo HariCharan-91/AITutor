@@ -10,9 +10,10 @@ interface TutorCardProps {
   reviews: number;
   sessions: number;
   imageUrl: string;
+  onBookSession: (tutorName: string, subject: string) => void;
 }
 
-export function TutorCard({ name, subjects, rating, reviews, sessions, imageUrl }: TutorCardProps) {
+export function TutorCard({ name, subjects, rating, reviews, sessions, imageUrl, onBookSession }: TutorCardProps) {
   return (
     <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
       <div className="relative h-48 w-full">
@@ -58,7 +59,10 @@ export function TutorCard({ name, subjects, rating, reviews, sessions, imageUrl 
           ))}
         </div>
         
-        <button className="mt-4 w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors">
+        <button 
+          onClick={() => onBookSession(name, subjects[0])}
+          className="mt-4 w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+        >
           Book Session
         </button>
       </div>
