@@ -249,9 +249,9 @@ def generate_token(identity: str, room: str, name: str = None) -> str:
     try:
         grants = api.VideoGrants(room_join=True, room=room)
         token = (
-                api.AccessToken(api_key=cfg['LIVEKIT_API_KEY'], api_secret=cfg['LIVEKIT_API_SECRET'])
+                    api.AccessToken(api_key=cfg['LIVEKIT_API_KEY'], api_secret=cfg['LIVEKIT_API_SECRET'])
             .with_identity(identity)
-            .with_name(name)  # Set the participant's display name
+                .with_name(name)  # Set the participant's display name
             .with_grants(grants)
             .to_jwt()
         )
