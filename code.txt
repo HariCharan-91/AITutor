@@ -1,0 +1,4 @@
+Start the env
+
+.\venv\Scripts\Activate.ps1
+
