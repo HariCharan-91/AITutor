@@ -28,7 +28,7 @@ def create_room_endpoint():
     """
     data = request.get_json() or {}
     room_name = data.get('room')
-    max_participants = data.get('max_participants')
+    max_participants = 2  # Force max participants to 2
     empty_timeout = data.get('empty_timeout')
     metadata = data.get('metadata')
 
@@ -68,7 +68,14 @@ def delete_room_endpoint(room_id):
         # Use async room deletion
         result = asyncio.run(room_service.delete_room_async(room_id))
         
+        # Check for TwirpError with not_found code
         if result.get('status') == 'error':
+            error_str = str(result.get('error', '')).lower()
+            if 'not_found' in error_str or 'room does not exist' in error_str:
+                return jsonify({
+                    'message': f'Room {room_id} was already deleted or does not exist',
+                    'status': 'success'
+                }), 200
             return jsonify({
                 'error': result.get('error', 'Unknown error'),
                 'status': 'error'
@@ -80,6 +87,13 @@ def delete_room_endpoint(room_id):
         }), 200
         
     except Exception as e:
+        error_str = str(e).lower()
+        # Handle TwirpError with not_found code
+        if 'not_found' in error_str or 'room does not exist' in error_str:
+            return jsonify({
+                'message': f'Room {room_id} was already deleted or does not exist',
+                'status': 'success'
+            }), 200
         return jsonify({'error': str(e), 'status': 'error'}), 500
 
 @livekit_bp.route('/token', methods=['POST'])

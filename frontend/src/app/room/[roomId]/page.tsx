@@ -11,7 +11,10 @@ import {
   RemoteTrack,
   Track,
   VideoPresets,
-  RoomOptions
+  RoomOptions,
+  LocalTrackPublication,
+  LocalTrack,
+  ConnectionState
 } from 'livekit-client';
 
 export default function RoomPage({ params }: { params: Promise<{ roomId: string }> }) {
@@ -75,14 +78,26 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
         throw new Error('No token received');
       }
 
-      // Create new room instance
-      const newRoom = new Room();
+      // Create new room instance with reconnection options
+      const newRoom = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+        publishDefaults: {
+          simulcast: true,
+        },
+      });
       setRoom(newRoom);
 
       // Connect to room
       console.log('Connecting to room...');
       await newRoom.connect(process.env.NEXT_PUBLIC_LIVEKIT_URL!, data.token, {
         autoSubscribe: true,
+        rtcConfig: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+          ],
+        },
       });
       console.log('Successfully connected to room');
 
@@ -101,55 +116,75 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
 
       // Set up event listeners
       console.log('Setting up event listeners...');
+      
+      // Handle connection state changes
+      newRoom.on(RoomEvent.ConnectionStateChanged, (state) => {
+        console.log('Connection state changed:', state);
+        setIsConnected(state === ConnectionState.Connected);
+        
+        if (state === ConnectionState.Disconnected) {
+          setError('Connection lost. Attempting to reconnect...');
+        } else if (state === ConnectionState.Connected) {
+          setError(null);
+        } else if (state === ConnectionState.SignalReconnecting) {
+          setError('Reconnecting to session...');
+        }
+      });
+
+      // Handle participant events
       newRoom.on(RoomEvent.ParticipantConnected, (participant) => {
-        console.log('Participant connected: [ID]', participant.identity, '[SID]', participant.sid);
+        console.log('Participant connected:', participant.identity);
         if (participant.identity !== newRoom.localParticipant.identity) {
           setRemoteParticipants(prev => {
             const existing = prev.find(p => p.identity === participant.identity);
             if (!existing) {
               return [...prev, participant];
             }
-            return prev; // Participant already exists, do not add duplicate
+            return prev;
           });
         }
       });
 
       newRoom.on(RoomEvent.ParticipantDisconnected, (participant) => {
-        console.log('Participant disconnected: [ID]', participant.identity, '[SID]', participant.sid);
+        console.log('Participant disconnected:', participant.identity);
         setRemoteParticipants(prev => prev.filter(p => p.identity !== participant.identity));
       });
 
+      // Handle track events
       newRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-        console.log('Track subscribed: [Kind]', track.kind, '[Source]', track.source, 'from participant: [ID]', participant.identity, '[SID]', participant.sid);
+        console.log('Track subscribed:', track.kind, 'from participant:', participant.identity);
         handleTrackSubscribed(track, publication, participant);
       });
 
       newRoom.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
-        console.log('Track unsubscribed: [Kind]', track.kind, '[Source]', track.source, 'from participant: [ID]', participant.identity, '[SID]', participant.sid);
+        console.log('Track unsubscribed:', track.kind, 'from participant:', participant.identity);
         handleTrackUnsubscribed(track, publication, participant);
       });
 
+      // Handle data messages
       newRoom.on(RoomEvent.DataReceived, (payload, participant) => {
-        console.log('Data received from: [ID]', participant?.identity);
+        console.log('Data received from:', participant?.identity);
         handleDataReceived(payload, participant);
-      });
-
-      newRoom.on(RoomEvent.ConnectionStateChanged, (state) => {
-        console.log('Connection state changed:', state);
-        setIsConnected(state === 'connected');
-        setError(state === 'disconnected' ? 'Connection lost. Please try rejoining the session.' : null);
       });
 
       // Get initial participants
       console.log('Getting initial participants...');
       const initialParticipants = Array.from(newRoom.remoteParticipants.values()).filter(p => p.identity !== newRoom.localParticipant.identity) as RemoteParticipant[];
       console.log('Initial participants:', initialParticipants.map(p => ({ id: p.identity, sid: p.sid })));
+      
+      // Check if room is full (2 participants max)
+      if (initialParticipants.length >= 1) {
+        console.log('Room is full');
+        setError('This session is already full. Only one tutor and one student are allowed per session.');
+        newRoom.disconnect();
+        setIsLoading(false);
+        return;
+      }
+      
       setRemoteParticipants(initialParticipants);
-
       setLocalParticipant(newRoom.localParticipant);
       setIsConnected(true);
       setError(null);
-
       setIsLoading(false);
     } catch (err) {
       console.error('Connection error:', err);
@@ -465,9 +500,50 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
                   {isVideoEnabled ? 'Stop Video' : 'Start Video'}
                 </Button>
                 <Button
-                  onClick={() => {
-                    room?.disconnect();
-                    window.history.back();
+                  onClick={async () => {
+                    try {
+                      // Properly disconnect from the room
+                      if (room) {
+                        // First, stop all local tracks
+                        if (room.localParticipant) {
+                          // Stop camera and microphone
+                          await room.localParticipant.setCameraEnabled(false);
+                          await room.localParticipant.setMicrophoneEnabled(false);
+                        }
+                        
+                        // Then disconnect from the room with stopLocalTracks
+                        await room.disconnect(true);
+                      }
+                      
+                      // If this is the last participant, try to delete the room
+                      if (remoteParticipants.length === 0) {
+                        try {
+                          const response = await fetch(`/api/livekit/rooms/${resolvedParams.roomId}`, {
+                            method: 'DELETE',
+                          });
+                          
+                          if (!response.ok) {
+                            console.warn('Failed to delete room, but continuing with disconnect:', await response.text());
+                          }
+                        } catch (deleteError) {
+                          console.warn('Error during room deletion, but continuing with disconnect:', deleteError);
+                        }
+                      }
+                      
+                      // Clear any remaining state
+                      setRoom(null);
+                      setLocalParticipant(null);
+                      setRemoteParticipants([]);
+                      setMessages([]);
+                      setIsAudioEnabled(false);
+                      setIsVideoEnabled(false);
+                      
+                      // Navigate back
+                      window.history.back();
+                    } catch (error) {
+                      console.error('Error leaving session:', error);
+                      setError('Failed to leave session properly. Please try again.');
+                    }
                   }}
                   className="bg-red-600 hover:bg-red-700"
                 >

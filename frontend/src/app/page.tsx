@@ -140,23 +140,27 @@ export default function Home() {
     
     if (confirmDelete) {
       try {
-        // Delete from backend first
-        const response = await fetch(`/api/livekit/rooms/${sessionToDelete.roomId}`, {
-          method: 'DELETE',
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to delete room from backend');
+        // Try to delete from backend
+        try {
+          const response = await fetch(`/api/livekit/rooms/${sessionToDelete.roomId}`, {
+            method: 'DELETE',
+          });
+          
+          if (!response.ok) {
+            console.warn('Failed to delete room from backend:', await response.text());
+          }
+        } catch (deleteError) {
+          console.warn('Error during room deletion:', deleteError);
         }
 
-        // If backend deletion successful, remove from frontend
+        // Remove from frontend regardless of backend deletion success
         const updatedSessions = pastSessions.filter(s => s.roomId !== sessionToDelete.roomId);
         saveSessions(updatedSessions);
         
         // Show success message
         alert('Session deleted successfully');
       } catch (error) {
-        console.error('Error deleting session:', error);
+        console.error('Error in session deletion process:', error);
         alert('Failed to delete session. Please try again.');
       }
     }
