@@ -78,7 +78,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
         throw new Error('No token received');
       }
 
-      // Create new room instance with reconnection options
+      // Create new room instance
       const newRoom = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -124,6 +124,13 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
         
         if (state === ConnectionState.Disconnected) {
           setError('Connection lost. Attempting to reconnect...');
+          // Let LiveKit handle reconnection automatically
+          setTimeout(() => {
+            if (newRoom.state === ConnectionState.Disconnected) {
+              console.log('Attempting to reconnect...');
+              newRoom.connect(process.env.NEXT_PUBLIC_LIVEKIT_URL!, data.token);
+            }
+          }, 2000);
         } else if (state === ConnectionState.Connected) {
           setError(null);
         } else if (state === ConnectionState.SignalReconnecting) {
@@ -511,6 +518,9 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
                           await room.localParticipant.setMicrophoneEnabled(false);
                         }
                         
+                        // Remove all event listeners to prevent reconnection attempts
+                        room.removeAllListeners();
+                        
                         // Then disconnect from the room with stopLocalTracks
                         await room.disconnect(true);
                       }
@@ -537,6 +547,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
                       setMessages([]);
                       setIsAudioEnabled(false);
                       setIsVideoEnabled(false);
+                      setIsConnected(false);
                       
                       // Navigate back
                       window.history.back();
