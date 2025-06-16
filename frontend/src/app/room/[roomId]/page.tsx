@@ -7,6 +7,7 @@ import { VideoArea } from './components/VideoArea';
 import { ParticipantList } from './components/ParticipantList';
 import { ChatArea } from './components/ChatArea';
 import { Controls } from './components/Controls';
+import { PreJoinPage } from './components/PreJoinPage';
 import { connectToRoom, leaveRoom, RoomInfo } from './utils/roomConnection';
 import { Room, RemoteParticipant, LocalParticipant, RemoteTrack, ConnectionState } from 'livekit-client';
 
@@ -24,6 +25,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [messages, setMessages] = useState<Array<{ sender: string; message: string }>>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [isPreJoin, setIsPreJoin] = useState(true);
 
   const handleConnectionStateChange = (state: ConnectionState) => {
     setIsConnected(state === ConnectionState.Connected);
@@ -126,17 +128,38 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
 
   const handleLeaveSession = async () => {
     try {
+      // First, disable camera and microphone
+      if (localParticipant) {
+        await localParticipant.setCameraEnabled(false);
+        await localParticipant.setMicrophoneEnabled(false);
+      }
+
+      // Then leave the room
       await leaveRoom(room, resolvedParams.roomId);
+      
+      // Reset all state
       setRoom(null);
       setLocalParticipant(null);
       setRemoteParticipants([]);
       setMessages([]);
       setIsAudioEnabled(false);
       setIsVideoEnabled(false);
+      setIsConnected(false);
+      
+      // Navigate back
       window.history.back();
     } catch (error) {
       console.error('Error leaving session:', error);
       setError('Failed to leave session properly. Please try again.');
+      
+      // Even if there's an error, try to force disconnect
+      if (room) {
+        try {
+          await room.disconnect();
+        } catch (disconnectError) {
+          console.error('Error during forced disconnect:', disconnectError);
+        }
+      }
     }
   };
 
@@ -160,7 +183,6 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
         subject,
         participantName
       });
-      handleConnectToRoom();
     } else {
       setError('Missing required session information');
       setIsLoading(false);
@@ -172,6 +194,18 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
       }
     };
   }, [resolvedParams.roomId, searchParams]);
+
+  if (isPreJoin) {
+    return (
+      <PreJoinPage
+        roomInfo={roomInfo}
+        onJoin={async () => {
+          setIsPreJoin(false);
+          await handleConnectToRoom();
+        }}
+      />
+    );
+  }
 
   if (isLoading) {
     return (

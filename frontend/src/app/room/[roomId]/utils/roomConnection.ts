@@ -19,6 +19,9 @@ import {
   DisconnectReason
 } from 'livekit-client';
 
+// Map to store active rooms
+const rooms = new Map<string, Room>();
+
 export interface RoomInfo {
   tutorName: string;
   subject: string;
@@ -197,58 +200,61 @@ export async function connectToRoom(
   throw lastError || new Error('Failed to connect to room');
 }
 
-export async function leaveRoom(room: Room | null, roomId: string) {
-  if (room) {
-    try {
-      // Stop all local tracks
-      if (room.localParticipant) {
-        // Stop camera and microphone
-        await room.localParticipant.setCameraEnabled(false);
-        await room.localParticipant.setMicrophoneEnabled(false);
+export const leaveRoom = async (room: Room | null, roomId: string) => {
+  if (!room) return;
 
-        // Detach all local tracks
-        const cameraTrack = room.localParticipant.getTrackPublication(Track.Source.Camera);
-        const microphoneTrack = room.localParticipant.getTrackPublication(Track.Source.Microphone);
-        
-        if (cameraTrack?.track) {
-          cameraTrack.track.detach();
-        }
-        if (microphoneTrack?.track) {
-          microphoneTrack.track.detach();
-        }
-      }
+  try {
+    // First, detach all tracks from the local participant
+    const localParticipant = room.localParticipant;
+    if (localParticipant) {
+      // Stop camera and microphone
+      await localParticipant.setCameraEnabled(false);
+      await localParticipant.setMicrophoneEnabled(false);
 
-      // Detach all remote tracks
-      for (const participant of room.remoteParticipants.values()) {
-        const cameraTrack = participant.getTrackPublication(Track.Source.Camera);
-        const microphoneTrack = participant.getTrackPublication(Track.Source.Microphone);
-        
-        if (cameraTrack?.track) {
-          cameraTrack.track.detach();
-        }
-        if (microphoneTrack?.track) {
-          microphoneTrack.track.detach();
-        }
-      }
+      // Detach all local tracks
+      const cameraTrack = localParticipant.getTrackPublication(Track.Source.Camera);
+      const microphoneTrack = localParticipant.getTrackPublication(Track.Source.Microphone);
       
-      // Disconnect from the room
-      await room.disconnect(true);
-      
-      // Try to delete the room if it's empty
-      try {
-        const response = await fetch(`/api/livekit/rooms/${roomId}`, {
-          method: 'DELETE',
-        });
-        
-        if (!response.ok) {
-          console.warn('Failed to delete room:', await response.text());
-        }
-      } catch (deleteError) {
-        console.warn('Error during room deletion:', deleteError);
+      if (cameraTrack?.track) {
+        cameraTrack.track.stop();
+        cameraTrack.track.detach().forEach((element: HTMLElement) => element.remove());
       }
-    } catch (error) {
-      console.error('Error leaving session:', error);
-      throw error;
+      if (microphoneTrack?.track) {
+        microphoneTrack.track.stop();
+        microphoneTrack.track.detach().forEach((element: HTMLElement) => element.remove());
+      }
     }
+
+    // Then disconnect from the room
+    await room.disconnect();
+    
+    // Clean up any remaining tracks
+    Array.from(room.remoteParticipants.values()).forEach((participant: RemoteParticipant) => {
+      const cameraTrack = participant.getTrackPublication(Track.Source.Camera);
+      const microphoneTrack = participant.getTrackPublication(Track.Source.Microphone);
+      
+      if (cameraTrack?.track) {
+        cameraTrack.track.stop();
+        cameraTrack.track.detach().forEach((element: HTMLElement) => element.remove());
+      }
+      if (microphoneTrack?.track) {
+        microphoneTrack.track.stop();
+        microphoneTrack.track.detach().forEach((element: HTMLElement) => element.remove());
+      }
+    });
+
+    // Remove the room from the rooms map
+    if (rooms.has(roomId)) {
+      rooms.delete(roomId);
+    }
+  } catch (error) {
+    console.error('Error during room cleanup:', error);
+    // Even if there's an error, try to ensure the room is disconnected
+    try {
+      await room.disconnect();
+    } catch (disconnectError) {
+      console.error('Error during forced disconnect:', disconnectError);
+    }
+    throw error;
   }
-} 
+}; 
