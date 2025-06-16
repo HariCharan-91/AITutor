@@ -7,6 +7,7 @@ interface ControlsProps {
   onToggleAudio: () => void;
   onToggleVideo: () => void;
   onLeaveSession: () => void;
+  isAITutor?: boolean;
 }
 
 export function Controls({
@@ -16,6 +17,7 @@ export function Controls({
   onToggleAudio,
   onToggleVideo,
   onLeaveSession,
+  isAITutor = false
 }: ControlsProps) {
   return (
     <div className="bg-white rounded-lg shadow-md p-6">

@@ -16,7 +16,8 @@ import {
   RemoteTrackPublication,
   TrackPublication,
   ConnectionError,
-  DisconnectReason
+  DisconnectReason,
+  DataPacket_Kind
 } from 'livekit-client';
 
 // Map to store active rooms
@@ -131,7 +132,7 @@ export async function connectToRoom(
           iceTransportPolicy: 'all',
           bundlePolicy: 'max-bundle',
           rtcpMuxPolicy: 'require',
-          iceCandidatePoolSize: 10
+          iceCandidatePoolSize: 10,
         },
         websocketTimeout: 15000, // Increased timeout
       };
@@ -147,7 +148,15 @@ export async function connectToRoom(
         console.error('Connection error:', reason);
         if (reason) {
           console.log('Disconnected with reason:', reason);
-          // You might want to implement custom reconnection logic here
+        }
+      });
+
+      // Add DataChannel error handling
+      room.on(RoomEvent.DataReceived, (payload: Uint8Array, participant?: RemoteParticipant) => {
+        try {
+          onDataReceived(payload, participant);
+        } catch (error) {
+          console.error('Error handling data received:', error);
         }
       });
 
@@ -155,7 +164,6 @@ export async function connectToRoom(
       room.on(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
       room.on(RoomEvent.TrackSubscribed, onTrackSubscribed);
       room.on(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed);
-      room.on(RoomEvent.DataReceived, onDataReceived);
 
       // Connect to room with retry logic
       try {
@@ -178,6 +186,9 @@ export async function connectToRoom(
         console.warn('Media access error:', mediaError);
         // Continue without media if access is denied
       }
+
+      // Store room in map
+      rooms.set(roomId, room);
 
       return {
         room,

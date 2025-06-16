@@ -26,6 +26,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
   const [messages, setMessages] = useState<Array<{ sender: string; message: string }>>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isPreJoin, setIsPreJoin] = useState(true);
+  const isAITutor = searchParams.get('isAITutor') === 'true';
 
   const handleConnectionStateChange = (state: ConnectionState) => {
     setIsConnected(state === ConnectionState.Connected);
@@ -203,6 +204,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
           setIsPreJoin(false);
           await handleConnectToRoom();
         }}
+        isAITutor={isAITutor}
       />
     );
   }
@@ -272,11 +274,37 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
               </h1>
               <p className="text-gray-600">
                 with {roomInfo?.tutorName}
+                {isAITutor && <span className="ml-2 text-blue-600">(AI Tutor)</span>}
               </p>
             </div>
             <div className="text-right">
-              <p className="text-sm text-gray-500">Room ID</p>
-              <p className="font-mono text-sm">{resolvedParams.roomId}</p>
+              <div className="flex items-center space-x-2">
+                <div>
+                  <p className="text-sm text-gray-500">Session ID</p>
+                  <p className="font-mono text-sm bg-gray-100 px-2 py-1 rounded">
+                    {resolvedParams.roomId}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(resolvedParams.roomId);
+                    const button = document.getElementById('copyButton');
+                    if (button) {
+                      const originalText = button.textContent;
+                      button.textContent = 'Copied!';
+                      button.classList.add('bg-green-600');
+                      setTimeout(() => {
+                        button.textContent = originalText;
+                        button.classList.remove('bg-green-600');
+                      }, 2000);
+                    }
+                  }}
+                  id="copyButton"
+                  className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                >
+                  Copy ID
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -288,6 +316,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
             <VideoArea
               localParticipant={localParticipant}
               remoteParticipants={remoteParticipants}
+              isAITutor={isAITutor}
             />
           </div>
 
@@ -297,6 +326,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
               participantName={roomInfo?.participantName || ''}
               tutorName={roomInfo?.tutorName || ''}
               remoteParticipants={remoteParticipants}
+              isAITutor={isAITutor}
             />
 
             <ChatArea
@@ -304,6 +334,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
               newMessage={newMessage}
               onNewMessageChange={setNewMessage}
               onSendMessage={handleSendMessage}
+              isAITutor={isAITutor}
             />
 
             <Controls
@@ -313,6 +344,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
               onToggleAudio={handleToggleAudio}
               onToggleVideo={handleToggleVideo}
               onLeaveSession={handleLeaveSession}
+              isAITutor={isAITutor}
             />
           </div>
         </div>

@@ -4,9 +4,10 @@ interface ParticipantListProps {
   participantName: string;
   tutorName: string;
   remoteParticipants: RemoteParticipant[];
+  isAITutor?: boolean;
 }
 
-export function ParticipantList({ participantName, tutorName, remoteParticipants }: ParticipantListProps) {
+export function ParticipantList({ participantName, tutorName, remoteParticipants, isAITutor = false }: ParticipantListProps) {
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Participants</h2>

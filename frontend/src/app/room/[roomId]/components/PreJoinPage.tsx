@@ -5,9 +5,10 @@ import { RoomInfo } from '../utils/roomConnection';
 interface PreJoinPageProps {
   roomInfo: RoomInfo | null;
   onJoin: () => Promise<void>;
+  isAITutor?: boolean;
 }
 
-export function PreJoinPage({ roomInfo, onJoin }: PreJoinPageProps) {
+export function PreJoinPage({ roomInfo, onJoin, isAITutor = false }: PreJoinPageProps) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [deviceError, setDeviceError] = useState<string | null>(null);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);

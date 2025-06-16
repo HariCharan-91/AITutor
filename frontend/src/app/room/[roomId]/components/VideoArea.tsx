@@ -4,9 +4,10 @@ import { LocalParticipant, RemoteParticipant, Track } from 'livekit-client';
 interface VideoAreaProps {
   localParticipant: LocalParticipant | null;
   remoteParticipants: RemoteParticipant[];
+  isAITutor?: boolean;
 }
 
-export function VideoArea({ localParticipant, remoteParticipants }: VideoAreaProps) {
+export function VideoArea({ localParticipant, remoteParticipants, isAITutor = false }: VideoAreaProps) {
   // Effect to handle local video
   useEffect(() => {
     let localVideoElement: HTMLVideoElement | null = null;
