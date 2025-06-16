@@ -101,17 +101,45 @@ export default function Home() {
     router.push(`/room/${session.roomId}`);
   };
 
+  const handleDeleteSession = (sessionToDelete: StoredSession) => {
+    const confirmDelete = confirm(`Are you sure you want to delete your session with ${sessionToDelete.tutorName} for ${sessionToDelete.subject}?`);
+    if (confirmDelete) {
+      console.log('Deleting session:', {
+        roomId: sessionToDelete.roomId,
+        subject: sessionToDelete.subject,
+        tutorName: sessionToDelete.tutorName,
+        participantName: sessionToDelete.participantName
+      });
+      
+      const updatedSessions = storedSessions.filter(s => s.roomId !== sessionToDelete.roomId);
+      saveSessions(updatedSessions);
+      
+      // Show success message
+      alert(`Session with ${sessionToDelete.tutorName} for ${sessionToDelete.subject} has been deleted successfully.`);
+      
+      console.log('Session deleted successfully. Remaining sessions:', updatedSessions);
+    }
+  };
+
   const handleBookSession = async (tutorName: string, subject: string) => {
     if (!participantName) {
       alert("Please enter your name before booking a session.");
       return;
     }
 
+    console.log('Checking for existing session:', {
+      tutorName,
+      subject,
+      participantName,
+      currentSessions: storedSessions
+    });
+
     const existingSession = storedSessions.find(
       (s) => s.tutorName === tutorName && s.subject === subject && s.participantName === participantName
     );
 
     if (existingSession) {
+      console.log('Found existing session:', existingSession);
       const confirmRejoin = confirm(
         `You have an existing session with ${tutorName} for ${subject} as ${participantName}. Do you want to rejoin this session?`
       );
@@ -122,6 +150,7 @@ export default function Home() {
     }
 
     setIsLoading(true);
+    console.log('Creating new session for:', { tutorName, subject, participantName });
 
     // Pass subject, tutorName, and participantName as query parameters
     const queryParams = new URLSearchParams({
@@ -135,7 +164,8 @@ export default function Home() {
     const subjectIdentifier = subject.replace(/\s+/g, '-').toLowerCase();
     router.push(`/room/${subjectIdentifier}?${queryParams}`);
 
-    setIsLoading(false);
+    // Don't set isLoading to false here as we're navigating away
+    // setIsLoading(false); // Remove this line to prevent double session creation
   };
 
   return (
@@ -170,12 +200,21 @@ export default function Home() {
                 <div key={session.roomId} className="bg-white rounded-lg shadow-md p-6">
                   <h3 className="text-xl font-semibold mb-2">{session.subject} with {session.tutorName}</h3>
                   <p className="text-gray-600 mb-4">As: {session.participantName}</p>
-                  <Button
-                    onClick={() => handleRejoinSession(session)}
-                    disabled={isLoading}
-                  >
-                    Rejoin Session
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => handleRejoinSession(session)}
+                      disabled={isLoading}
+                    >
+                      Rejoin Session
+                    </Button>
+                    <Button
+                      onClick={() => handleDeleteSession(session)}
+                      disabled={isLoading}
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
