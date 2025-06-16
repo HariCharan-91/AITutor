@@ -1,9 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { TutorCard } from '@/components/TutorCard';
 import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
+
+interface StoredSession {
+  roomId: string;
+  tutorName: string;
+  subject: string;
+  participantName: string;
+  timestamp: number;
+}
 
 const tutors = [
   {
@@ -59,29 +68,48 @@ const tutors = [
 export default function Home() {
   const [participantName, setParticipantName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [pastSessions, setPastSessions] = useState<StoredSession[]>([]);
   const router = useRouter();
 
+  // Load past sessions from localStorage
+  useEffect(() => {
+    const savedSessions = localStorage.getItem('pastSessions');
+    if (savedSessions) {
+      setPastSessions(JSON.parse(savedSessions));
+    }
+  }, []);
+
+  // Save sessions to localStorage
+  const saveSessions = (sessions: StoredSession[]) => {
+    localStorage.setItem('pastSessions', JSON.stringify(sessions));
+    setPastSessions(sessions);
+  };
+
   const generateUniqueRoomId = (tutorName: string, subject: string) => {
-    // Create a base room name from tutor and subject
     const baseName = `${tutorName}-${subject}`.toLowerCase().replace(/\s+/g, '-');
-    // Add timestamp to make it unique
     const timestamp = Date.now();
-    // Add random string to ensure uniqueness
     const random = Math.random().toString(36).substring(2, 8);
     return `${baseName}-${timestamp}-${random}`;
   };
 
   const handleBookSession = async (tutorName: string, subject: string) => {
-    // Allow any name, even empty
     const displayName = participantName.trim() || 'Anonymous';
     
     setIsLoading(true);
     console.log('Creating new session for:', { tutorName, subject, participantName: displayName });
 
-    // Generate unique room ID
     const roomId = generateUniqueRoomId(tutorName, subject);
 
-    // Pass subject, tutorName, and participantName as query parameters
+    // Save the new session
+    const newSession: StoredSession = {
+      roomId,
+      tutorName,
+      subject,
+      participantName: displayName,
+      timestamp: Date.now()
+    };
+    saveSessions([...pastSessions, newSession]);
+
     const queryParams = new URLSearchParams({
       tutorName: tutorName,
       subject: subject,
@@ -91,6 +119,47 @@ export default function Home() {
     }).toString();
     
     router.push(`/room/${roomId}?${queryParams}`);
+  };
+
+  const handleRejoinSession = (session: StoredSession) => {
+    const queryParams = new URLSearchParams({
+      tutorName: session.tutorName,
+      subject: session.subject,
+      participantName: session.participantName,
+      roomId: session.roomId,
+      isNew: 'false'
+    }).toString();
+    
+    router.push(`/room/${session.roomId}?${queryParams}`);
+  };
+
+  const handleDeleteSession = async (sessionToDelete: StoredSession) => {
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete your session with ${sessionToDelete.tutorName} for ${sessionToDelete.subject}?`
+    );
+    
+    if (confirmDelete) {
+      try {
+        // Delete from backend first
+        const response = await fetch(`/api/livekit/rooms/${sessionToDelete.roomId}`, {
+          method: 'DELETE',
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to delete room from backend');
+        }
+
+        // If backend deletion successful, remove from frontend
+        const updatedSessions = pastSessions.filter(s => s.roomId !== sessionToDelete.roomId);
+        saveSessions(updatedSessions);
+        
+        // Show success message
+        alert('Session deleted successfully');
+      } catch (error) {
+        console.error('Error deleting session:', error);
+        alert('Failed to delete session. Please try again.');
+      }
+    }
   };
 
   return (
@@ -113,6 +182,40 @@ export default function Home() {
             />
           </div>
         </div>
+
+        {pastSessions.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-3xl font-bold text-gray-900 mb-6 text-center">
+              Your Past Sessions
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {pastSessions.map((session) => (
+                <div key={session.roomId} className="bg-white rounded-lg shadow-md p-6">
+                  <h3 className="text-xl font-semibold mb-2">{session.subject}</h3>
+                  <p className="text-gray-600 mb-2">with {session.tutorName}</p>
+                  <p className="text-gray-500 text-sm mb-4">
+                    As: {session.participantName}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => handleRejoinSession(session)}
+                      disabled={isLoading}
+                    >
+                      Rejoin Session
+                    </Button>
+                    <Button
+                      onClick={() => handleDeleteSession(session)}
+                      disabled={isLoading}
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {tutors.map((tutor) => (

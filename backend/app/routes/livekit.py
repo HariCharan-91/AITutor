@@ -59,22 +59,23 @@ def create_room_endpoint():
     except Exception as e:
         return jsonify({'error': str(e), 'status': 'error'}), 500
 
-@livekit_bp.route('/rooms/<room_name>', methods=['DELETE'])
-def delete_room_endpoint(room_name):
+@livekit_bp.route('/rooms/<room_id>', methods=['DELETE'])
+def delete_room_endpoint(room_id):
     """
     Delete a LiveKit room.
     """
     try:
-        result = room_service.delete_room(room_name)
+        # Use async room deletion
+        result = asyncio.run(room_service.delete_room_async(room_id))
         
         if result.get('status') == 'error':
             return jsonify({
-                'error': result.get('error', 'Failed to delete room'),
+                'error': result.get('error', 'Unknown error'),
                 'status': 'error'
             }), 500
-            
+        
         return jsonify({
-            'message': f'Room {room_name} deleted successfully',
+            'message': f'Room {room_id} deleted successfully',
             'status': 'success'
         }), 200
         
@@ -87,28 +88,50 @@ def get_token():
     Generate an access token for joining a LiveKit room.
     Expects JSON: { 'identity': str, 'room': str, 'name': str }
     """
-    data = request.get_json() or {}
-    identity = data.get('identity')
-    room = data.get('room')
-    name = data.get('name')
-
-    if not identity or not room:
-        return jsonify({
-            'error': 'identity and room are required', 
-            'status': 'error'
-        }), 400
-
     try:
-        token = generate_token(identity, room, name)
-        return jsonify({
-            'token': token, 
-            'identity': identity,
-            'room': room,
-            'name': name,
-            'status': 'success'
-        }), 200
+        data = request.get_json() or {}
+        identity = data.get('identity')
+        room = data.get('room')
+        name = data.get('name')
+
+        print(f"Token request received - identity: {identity}, room: {room}, name: {name}")
+
+        if not identity or not room:
+            print("Missing required fields in token request")
+            return jsonify({
+                'error': 'identity and room are required', 
+                'status': 'error'
+            }), 400
+
+        try:
+            token = generate_token(identity, room, name)
+            if not token or token == "dummy_token_for_testing" or token == "dummy_token_fallback":
+                print("Failed to generate valid token")
+                return jsonify({
+                    'error': 'Failed to generate valid token. Please check LiveKit configuration.',
+                    'status': 'error'
+                }), 500
+
+            print(f"Token generated successfully for room: {room}")
+            return jsonify({
+                'token': token, 
+                'identity': identity,
+                'room': room,
+                'name': name,
+                'status': 'success'
+            }), 200
+        except Exception as e:
+            print(f"Error generating token: {str(e)}")
+            return jsonify({
+                'error': f'Failed to generate token: {str(e)}',
+                'status': 'error'
+            }), 500
     except Exception as e:
-        return jsonify({'error': str(e), 'status': 'error'}), 500
+        print(f"Unexpected error in token endpoint: {str(e)}")
+        return jsonify({
+            'error': 'Internal server error',
+            'status': 'error'
+        }), 500
 
 @livekit_bp.route('/health', methods=['GET'])
 def health_check():
