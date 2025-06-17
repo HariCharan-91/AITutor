@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LocalParticipant, RemoteParticipant, Track } from 'livekit-client';
+import { LocalParticipant, RemoteParticipant, Track, RemoteTrackPublication } from 'livekit-client';
 
 interface VideoAreaProps {
   localParticipant: LocalParticipant | null;
@@ -33,18 +33,27 @@ export function VideoArea({ localParticipant, remoteParticipants, isAITutor = fa
         await localParticipant.setCameraEnabled(true);
         console.log('Camera enabled');
 
-        // Get the video track
-        const localVideoTrack = localParticipant.getTrackPublication(Track.Source.Camera);
-        console.log('Local video track:', localVideoTrack);
+        // Wait for the track to be available
+        const waitForTrack = async () => {
+          let attempts = 0;
+          while (attempts < 10) {
+            const localVideoTrack = localParticipant.getTrackPublication(Track.Source.Camera);
+            console.log('Checking local video track:', localVideoTrack);
+            
+            if (localVideoTrack?.track) {
+              console.log('Local video track found, attaching...');
+              localVideoTrack.track.attach(localVideoRef.current!);
+              setLocalVideoError(null);
+              return;
+            }
+            
+            attempts++;
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          throw new Error('Local video track not available after multiple attempts');
+        };
 
-        if (localVideoTrack?.track) {
-          console.log('Attaching local video track');
-          localVideoTrack.track.attach(localVideoRef.current);
-          setLocalVideoError(null);
-        } else {
-          console.warn('No local video track found');
-          setLocalVideoError('No video track available');
-        }
+        await waitForTrack();
       } catch (error) {
         console.error('Error setting up local video:', error);
         setLocalVideoError('Failed to setup video');
@@ -74,27 +83,38 @@ export function VideoArea({ localParticipant, remoteParticipants, isAITutor = fa
         try {
           console.log(`Setting up video for participant ${participant.identity}...`);
           
-          const remoteVideoPublication = participant.getTrackPublication(Track.Source.Camera);
-          console.log('Remote video publication:', remoteVideoPublication);
-
-          if (remoteVideoPublication?.isSubscribed && remoteVideoPublication.track) {
-            const videoElement = remoteVideoRefs.current.get(participant.sid);
-            if (videoElement) {
-              console.log('Attaching remote video track');
-              remoteVideoPublication.track.attach(videoElement);
-              cleanupFunctions.push(() => {
-                console.log('Detaching remote video track');
-                remoteVideoPublication.track.detach();
-              });
-              newErrors.delete(participant.sid);
-            } else {
-              console.warn(`No video element found for participant ${participant.identity}`);
-              newErrors.set(participant.sid, 'No video element available');
+          // Wait for the track to be available
+          const waitForTrack = async () => {
+            let attempts = 0;
+            while (attempts < 10) {
+              const remoteVideoPublication = participant.getTrackPublication(Track.Source.Camera);
+              console.log('Checking remote video publication:', remoteVideoPublication);
+              
+              if (remoteVideoPublication?.isSubscribed && remoteVideoPublication.track) {
+                const videoElement = remoteVideoRefs.current.get(participant.sid);
+                if (videoElement) {
+                  console.log('Remote video track found, attaching...');
+                  remoteVideoPublication.track.attach(videoElement);
+                  cleanupFunctions.push(() => {
+                    console.log('Detaching remote video track');
+                    remoteVideoPublication.track.detach();
+                  });
+                  newErrors.delete(participant.sid);
+                  return;
+                } else {
+                  console.warn(`No video element found for participant ${participant.identity}`);
+                  newErrors.set(participant.sid, 'No video element available');
+                  return;
+                }
+              }
+              
+              attempts++;
+              await new Promise(resolve => setTimeout(resolve, 500));
             }
-          } else {
-            console.warn(`No video track for participant ${participant.identity}`);
-            newErrors.set(participant.sid, 'No video track available');
-          }
+            throw new Error('Remote video track not available after multiple attempts');
+          };
+
+          await waitForTrack();
         } catch (error) {
           console.error(`Error setting up video for participant ${participant.identity}:`, error);
           newErrors.set(participant.sid, 'Failed to setup video');
