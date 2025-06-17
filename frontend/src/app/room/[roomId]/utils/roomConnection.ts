@@ -46,12 +46,14 @@ export async function connectToRoom(
 
   while (retryCount < MAX_RETRY_ATTEMPTS) {
     try {
-      // Generate or retrieve persistent identity
-      let participantIdentity = localStorage.getItem('livekit_participant_identity');
-      if (!participantIdentity) {
-        participantIdentity = 'user-' + Math.random().toString(36).substring(7);
-        localStorage.setItem('livekit_participant_identity', participantIdentity);
-      }
+      // Get participant info from URL parameters
+      const urlParams = new URLSearchParams(window.location.search);
+      const participantName = urlParams.get('participantName');
+      const tutorName = urlParams.get('tutorName');
+      const isAITutor = urlParams.get('isAITutor') === 'true';
+
+      // Create a unique identity that includes the name
+      const participantIdentity = `${participantName}-${Date.now()}`;
 
       // Request token from backend
       const response = await fetch('/api/livekit/token', {
@@ -62,6 +64,12 @@ export async function connectToRoom(
         body: JSON.stringify({
           identity: participantIdentity,
           room: roomId,
+          name: participantName,
+          metadata: JSON.stringify({
+            isTutor: participantName === tutorName,
+            isAITutor: isAITutor && participantName === tutorName,
+            originalName: participantName
+          })
         }),
       });
 
@@ -75,39 +83,62 @@ export async function connectToRoom(
         throw new Error('No token received');
       }
 
-      // Create new room instance with enhanced configuration
-      const publishDefaults: TrackPublishDefaults = {
-        simulcast: true,
-        videoSimulcastLayers: [
-          VideoPresets.h180,
-          VideoPresets.h360,
-          VideoPresets.h720,
-        ],
-        videoEncoding: {
-          maxBitrate: 1500000,
-          maxFramerate: 30,
-        },
-        audioPreset: AudioPresets.music,
-        dtx: true,
-        red: true,
-      };
-
-      const roomOptions: RoomOptions = {
+      // Create new room instance with proper video configuration
+      const room = new Room({
         adaptiveStream: true,
         dynacast: true,
-        publishDefaults,
         stopLocalTrackOnUnpublish: true,
-        // Enable noise suppression and echo cancellation
+        publishDefaults: {
+          simulcast: true,
+          videoSimulcastLayers: [
+            VideoPresets.h180,
+            VideoPresets.h360,
+            VideoPresets.h720,
+          ],
+          videoEncoding: {
+            maxBitrate: 1500000,
+            maxFramerate: 30,
+          },
+          audioPreset: AudioPresets.music,
+          dtx: true,
+          red: true,
+        },
         audioCaptureDefaults: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
         },
-      };
+      });
 
-      const room = new Room(roomOptions);
+      // Set up event listeners
+      room.on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
+        console.log('Connection state changed:', state);
+        onConnectionStateChange(state);
+      });
 
-      // Enhanced connection options with more ICE servers and better configuration
+      room.on(RoomEvent.ParticipantConnected, (participant: RemoteParticipant) => {
+        console.log('Participant connected:', participant.identity);
+        onParticipantConnected(participant);
+      });
+
+      room.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
+        console.log('Participant disconnected:', participant.identity);
+        onParticipantDisconnected(participant);
+      });
+
+      room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, publication: any, participant: RemoteParticipant) => {
+        console.log('Track subscribed:', track.kind, 'for participant:', participant.identity);
+        onTrackSubscribed(track, publication, participant);
+      });
+
+      room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, publication: any, participant: RemoteParticipant) => {
+        console.log('Track unsubscribed:', track.kind, 'for participant:', participant.identity);
+        onTrackUnsubscribed(track, publication, participant);
+      });
+
+      room.on(RoomEvent.DataReceived, onDataReceived);
+
+      // Connect to room with proper options
       const connectOptions: RoomConnectOptions = {
         autoSubscribe: true,
         rtcConfig: {
@@ -117,78 +148,39 @@ export async function connectToRoom(
             { urls: 'stun:stun2.l.google.com:19302' },
             { urls: 'stun:stun3.l.google.com:19302' },
             { urls: 'stun:stun4.l.google.com:19302' },
-            // Add TURN servers for better connectivity
-            {
-              urls: 'turn:turn.livekit.io:3478',
-              username: 'livekit',
-              credential: 'livekit',
-            },
-            {
-              urls: 'turns:turn.livekit.io:5349',
-              username: 'livekit',
-              credential: 'livekit',
-            }
           ],
           iceTransportPolicy: 'all',
           bundlePolicy: 'max-bundle',
           rtcpMuxPolicy: 'require',
-          iceCandidatePoolSize: 10,
         },
-        websocketTimeout: 15000, // Increased timeout
       };
 
-      // Set up event listeners
-      room.on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
-        console.log('Connection state changed:', state);
-        onConnectionStateChange(state);
-      });
+      console.log('Connecting to room...');
+      await room.connect(process.env.NEXT_PUBLIC_LIVEKIT_URL!, data.token, connectOptions);
+      console.log('Connected to room successfully');
 
-      // Add error handling for connection issues
-      room.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
-        console.error('Connection error:', reason);
-        if (reason) {
-          console.log('Disconnected with reason:', reason);
-        }
-      });
-
-      // Add DataChannel error handling
-      room.on(RoomEvent.DataReceived, (payload: Uint8Array, participant?: RemoteParticipant) => {
-        try {
-          onDataReceived(payload, participant);
-        } catch (error) {
-          console.error('Error handling data received:', error);
-        }
-      });
-
-      room.on(RoomEvent.ParticipantConnected, onParticipantConnected);
-      room.on(RoomEvent.ParticipantDisconnected, onParticipantDisconnected);
-      room.on(RoomEvent.TrackSubscribed, onTrackSubscribed);
-      room.on(RoomEvent.TrackUnsubscribed, onTrackUnsubscribed);
-
-      // Connect to room with retry logic
+      // Initialize camera and microphone
       try {
-        await room.connect(process.env.NEXT_PUBLIC_LIVEKIT_URL!, data.token, connectOptions);
-      } catch (connectError) {
-        console.error('Initial connection failed:', connectError);
-        if (retryCount < MAX_RETRY_ATTEMPTS - 1) {
-          console.log(`Retrying connection (${retryCount + 1}/${MAX_RETRY_ATTEMPTS})...`);
-          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * (retryCount + 1))); // Exponential backoff
-          retryCount++;
-          continue;
-        }
-        throw connectError;
-      }
-
-      // Initialize camera and microphone with error handling
-      try {
+        console.log('Enabling camera and microphone...');
         await room.localParticipant.enableCameraAndMicrophone();
+        console.log('Camera and microphone enabled successfully');
       } catch (mediaError) {
-        console.warn('Media access error:', mediaError);
-        // Continue without media if access is denied
+        console.error('Media access error:', mediaError);
+        // Try to enable just the camera if microphone fails
+        try {
+          console.log('Trying to enable just camera...');
+          await room.localParticipant.setCameraEnabled(true);
+          console.log('Camera enabled successfully');
+        } catch (cameraError) {
+          console.error('Camera access error:', cameraError);
+        }
       }
 
-      // Store room in map
-      rooms.set(roomId, room);
+      // Set the participant name after connection
+      if (room.localParticipant) {
+        room.localParticipant.name = participantName;
+        console.log('Local participant name set to:', participantName);
+      }
 
       return {
         room,
