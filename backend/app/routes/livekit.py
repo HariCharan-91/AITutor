@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 import asyncio
-from ..livekit.server_sdk import room_service, generate_token, create_room, create_room_async
+from ..livekit.server_sdk import room_service, generate_token, create_room, create_room_async, generate_random_room_name, check_room_capacity, start_session
 
 livekit_bp = Blueprint('livekit', __name__, url_prefix='/api/livekit')
 
@@ -171,3 +171,66 @@ def health_check():
             'error': str(e),
             'timestamp': int(__import__('time').time())
         }), 500
+
+@livekit_bp.route('/generate-room-name', methods=['GET'])
+def get_generated_room_name():
+    """
+    Generate a random room name.
+    """
+    try:
+        room_name = generate_random_room_name()
+        return jsonify({'room_name': room_name, 'status': 'success'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'status': 'error'}), 500
+
+@livekit_bp.route('/rooms/<room_id>/capacity', methods=['GET'])
+def get_room_capacity_endpoint(room_id):
+    """
+    Check if a room has reached its maximum capacity.
+    """
+    try:
+        capacity_info = asyncio.run(check_room_capacity(room_id))
+        
+        if "error" in capacity_info:
+            return jsonify({"error": capacity_info["error"], 'status': 'error'}), 400
+            
+        return jsonify(capacity_info), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'status': 'error'}), 500
+
+@livekit_bp.route('/start-session', methods=['POST'])
+def start_session_endpoint():
+    """
+    Start a new session by creating a room and generating a token.
+    Expects JSON: { 'identity': str, 'room': str, 'display_name': str (optional) }
+    """
+    data = request.get_json() or {}
+    identity = data.get('identity')
+    room_name = data.get('room')
+    display_name = data.get('display_name')
+
+    if not identity or not room_name:
+        return jsonify({'error': 'identity and room are required', 'status': 'error'}), 400
+
+    try:
+        # Assuming start_session internally handles room creation or joins if exists
+        result = asyncio.run(start_session(
+            identity=identity,
+            room=room_name,
+            display_name=display_name
+        ))
+
+        if result.get('status') == 'error':
+            return jsonify({
+                'error': result.get('error', 'Unknown error'),
+                'status': 'error'
+            }), 500
+        
+        return jsonify({
+            'message': f'Session started/joined for room {room_name}',
+            'session_info': result,
+            'status': 'success'
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e), 'status': 'error'}), 500

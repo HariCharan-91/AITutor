@@ -3,9 +3,12 @@ LiveKit server SDK integration with optimized lazy initialization and dummy fall
 """
 import os
 import logging
+import random
+import string
 from functools import lru_cache
 from livekit import api
 from dotenv import load_dotenv
+import json
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -16,6 +19,11 @@ load_dotenv()
 
 # Environment variable keys
 _ENV_KEYS = ('LIVEKIT_HOST', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET')
+
+def generate_random_room_name(length=8):
+    """Generate a random room name using letters and numbers."""
+    characters = string.ascii_letters + string.digits
+    return ''.join(random.choice(characters) for _ in range(length))
 
 # Load and validate config
 def _load_config():
@@ -294,9 +302,216 @@ async def create_room_async(name: str, max_participants: int = None, empty_timeo
     """
     service = get_room_service()
     if hasattr(service, 'create_room_async'):
-        return await service.create_room_async(name, max_participants=max_participants,
-                                             empty_timeout=empty_timeout, metadata=metadata)
+        # Ensure max_participants is always passed as an integer, default to 2 if not provided
+        effective_max_participants = max_participants if max_participants is not None else 2
+        logger.info(f"Attempting to create room '{name}' with max_participants: {effective_max_participants}")
+        
+        api_client = None
+        try:
+            api_client = await self._get_api_client()
+            
+            # Import CreateRoomRequest
+            from livekit.api import CreateRoomRequest
+            
+            # Create room request with parameters
+            request = CreateRoomRequest(
+                name=name,
+                empty_timeout=empty_timeout or 300,  # Default 5 minutes
+                max_participants=effective_max_participants,  # Use the effective_max_participants
+                metadata=metadata
+            )
+            
+            # Create the room using the official method
+            response = await api_client.room.create_room(request)
+            
+            # Return room details
+            return {
+                "name": response.name,
+                "status": "created",
+                "details": {
+                    "max_participants": response.max_participants,
+                    "empty_timeout": response.empty_timeout,
+                    "metadata": response.metadata
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to create room '{name}': {e}")
+            return {
+                "name": name,
+                "status": "error",
+                "error": str(e)
+            }
+        finally:
+            # Proper cleanup
+            if api_client:
+                try:
+                    if hasattr(api_client, '_session') and api_client._session:
+                        await api_client._session.close()
+                    elif hasattr(api_client, 'aclose'):
+                        await api_client.aclose()
+                except Exception as cleanup_error:
+                    logger.debug(f"Error during cleanup: {cleanup_error}")
+                    pass
     else:
         # Fallback for dummy service
         return service.create_room(name, max_participants=max_participants,
                                  empty_timeout=empty_timeout, metadata=metadata)
+
+def start_session(identity: str, display_name: str = None, max_participants: int = 2) -> dict:
+    """
+    Start a new session by creating a room and generating a token.
+    
+    Args:
+        identity: The unique identifier for the participant
+        display_name: Optional display name for the participant
+        max_participants: Maximum number of participants allowed (default: 2)
+    
+    Returns:
+        dict: Contains room_name and token for joining
+    """
+    # Generate a random room name
+    room_name = generate_random_room_name()
+    
+    logger.info(f"Starting session for identity: {identity}, room: {room_name}, requesting max_participants: {max_participants}")
+
+    # Create the room with max participants limit
+    room_result = create_room(
+        room_name,
+        max_participants=max_participants,
+        empty_timeout=300  # 5 minutes timeout
+    )
+    
+    if room_result.get("status") == "error":
+        logger.error(f"Failed to create room: {room_result.get('error')}")
+        return {"error": "Failed to create room"}
+    
+    # Generate token for the creator with participant limit
+    grants = api.VideoGrants(
+        room_join=True,
+        room=room_name,
+        max_participants=max_participants
+    )
+    
+    token = (
+        api.AccessToken(api_key=os.getenv('LIVEKIT_API_KEY'), api_secret=os.getenv('LIVEKIT_API_SECRET'))
+        .with_identity(identity)
+        .with_name(display_name)
+        .with_grants(grants)
+        .to_jwt()
+    )
+    
+    logger.info(f"Session started. Room: {room_name}, Token generated for identity: {identity}, Max Participants set to: {max_participants}")
+
+    return {
+        "room_name": room_name,
+        "token": token,
+        "status": "success",
+        "max_participants": max_participants
+    }
+
+async def check_room_capacity(room_name: str) -> dict:
+    """
+    Check if a room has reached its maximum capacity.
+    """
+    service = get_room_service()
+    if isinstance(service, DummyRoomService):
+        logger.info("Using DummyRoomService for capacity check. Always allows join.")
+        return {"can_join": True, "current_participants": 0, "max_participants": 2}
+
+    try:
+        api_client = await service._get_api_client()
+        from livekit.api import ListRoomsRequest
+        response = await api_client.room.list_rooms(ListRoomsRequest())
+        
+        logger.debug(f"Raw response.rooms: {response.rooms}") # Log all rooms returned by LiveKit
+
+        room = next((r for r in response.rooms if r.name == room_name), None)
+        
+        if not room:
+            logger.info(f"Room '{room_name}' not found. Returning can_join: True.")
+            return {
+                "can_join": True, # If room not found, it can be created
+                "current_participants": 0,
+                "max_participants": 2 # Default for new room
+            }
+        
+        logger.debug(f"Found room object for '{room_name}': {room}")
+        logger.debug(f"Room.name: {getattr(room, 'name', 'N/A')}")
+        logger.debug(f"Room.num_participants: {getattr(room, 'num_participants', 'N/A')}")
+        logger.debug(f"Room.max_participants (direct): {getattr(room, 'max_participants', 'N/A')}")
+        logger.debug(f"Room.metadata (raw): {getattr(room, 'metadata', 'N/A')}")
+
+        # Access current participants and max participants directly from the Room object
+        current_participants = room.num_participants if hasattr(room, 'num_participants') else 0
+        
+        # Initialize max_participants_from_room with the value from LiveKit's direct attribute, defaulting to 2 (our app's default)
+        max_participants_from_room = room.max_participants if hasattr(room, 'max_participants') else 2
+        
+        # Attempt to parse max_participants from metadata if available and differs, overriding if found
+        try:
+            if room.metadata:
+                room_metadata = json.loads(room.metadata)
+                if "max_participants" in room_metadata:
+                    # Prioritize metadata if explicitly set there by the creation process
+                    max_participants_from_room = room_metadata["max_participants"]
+                    logger.debug(f"Max participants updated from metadata: {max_participants_from_room}")
+        except json.JSONDecodeError:
+            logger.warning(f"Could not decode room metadata for room '{room_name}'. Metadata: {room.metadata}")
+        except Exception as meta_e:
+            logger.warning(f"Error processing room metadata for room '{room_name}': {meta_e}")
+
+        logger.info(f"Room '{room_name}' final current participants: {current_participants}, final max participants: {max_participants_from_room}")
+
+        can_join = False
+        if max_participants_from_room == 0: # 0 means unlimited participants in LiveKit
+            can_join = True
+        elif current_participants < max_participants_from_room:
+            can_join = True
+
+        return {
+            "can_join": can_join,
+            "current_participants": current_participants,
+            "max_participants": max_participants_from_room
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking room capacity for '{room_name}': {e}", exc_info=True)
+        return {
+            "error": str(e),
+            "can_join": False,
+            "current_participants": 0,
+            "max_participants": 0
+        }
+
+def join_session(room_name: str, identity: str, display_name: str = None) -> dict:
+    """
+    Join an existing session by generating a token for the room.
+    
+    Args:
+        room_name: The name of the room to join
+        identity: The unique identifier for the participant
+        display_name: Optional display name for the participant
+    
+    Returns:
+        dict: Contains token for joining
+    """
+    # Generate token with participant limit
+    grants = api.VideoGrants(
+        room_join=True,
+        room=room_name
+    )
+    
+    token = (
+        api.AccessToken(api_key=os.getenv('LIVEKIT_API_KEY'), api_secret=os.getenv('LIVEKIT_API_SECRET'))
+        .with_identity(identity)
+        .with_name(display_name)
+        .with_grants(grants)
+        .to_jwt()
+    )
+    
+    return {
+        "room_name": room_name,
+        "token": token,
+        "status": "success"
+    }

@@ -14,6 +14,7 @@ interface StoredSession {
   timestamp: number;
 }
 
+// Tutors array is no longer directly used for booking, but kept for reference if needed elsewhere.
 const tutors = [
   {
     name: "Sarah Johnson",
@@ -67,6 +68,7 @@ const tutors = [
 
 export default function Home() {
   const [participantName, setParticipantName] = useState('');
+  const [roomIdInput, setRoomIdInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [pastSessions, setPastSessions] = useState<StoredSession[]>([]);
   const router = useRouter();
@@ -85,40 +87,94 @@ export default function Home() {
     setPastSessions(sessions);
   };
 
-  const generateUniqueRoomId = (tutorName: string, subject: string) => {
-    const baseName = `${tutorName}-${subject}`.toLowerCase().replace(/\s+/g, '-');
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 8);
-    return `${baseName}-${timestamp}-${random}`;
-  };
-
-  const handleBookSession = async (tutorName: string, subject: string) => {
+  const handleStartOrJoinMeeting = async () => {
     const displayName = participantName.trim() || 'Anonymous';
-    
+    let meetingRoomId = roomIdInput.trim();
+
     setIsLoading(true);
-    console.log('Creating new session for:', { tutorName, subject, participantName: displayName });
 
-    const roomId = generateUniqueRoomId(tutorName, subject);
+    try {
+      // If no room ID is provided, generate one
+      if (!meetingRoomId) {
+        console.log("No room ID provided, generating one...");
+        const generateResponse = await fetch('/api/livekit/generate-room-name');
+        if (!generateResponse.ok) {
+          const errorData = await generateResponse.json();
+          alert(`Failed to generate room name: ${errorData.error || 'Unknown error'}`);
+          setIsLoading(false);
+          return;
+        }
+        const generateData = await generateResponse.json();
+        meetingRoomId = generateData.room_name; // Use the generated name
+        console.log(`Generated room name: ${meetingRoomId}`);
+      }
 
-    // Save the new session
-    const newSession: StoredSession = {
-      roomId,
-      tutorName,
-      subject,
-      participantName: displayName,
-      timestamp: Date.now()
-    };
-    saveSessions([...pastSessions, newSession]);
+      // Now proceed with capacity check and room creation/joining
+      const capacityResponse = await fetch(`/api/livekit/rooms/${meetingRoomId}/capacity`);
+      const capacityData = await capacityResponse.json();
 
-    const queryParams = new URLSearchParams({
-      tutorName: tutorName,
-      subject: subject,
-      participantName: displayName,
-      roomId: roomId,
-      isNew: 'true'
-    }).toString();
-    
-    router.push(`/room/${roomId}?${queryParams}`);
+      let isNewRoom = false;
+      if (capacityResponse.ok && capacityData.can_join) {
+        // Room exists and has capacity, so join it
+        console.log(`Joining existing room: ${meetingRoomId}`);
+      } else if (capacityResponse.ok && !capacityData.can_join) {
+        alert('Room is full. Please try a different Meeting Name.');
+        setIsLoading(false);
+        return;
+      } else {
+        // Room does not exist or API call failed (e.g., 404), so create a new one
+        console.log(`Creating new room: ${meetingRoomId}`);
+        const createResponse = await fetch('/api/livekit/start-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identity: displayName,
+            room: meetingRoomId,
+            display_name: displayName,
+          }),
+        });
+
+        if (!createResponse.ok) {
+          const errorData = await createResponse.json();
+          alert(`Failed to create room: ${errorData.error || 'Unknown error'}`);
+          setIsLoading(false);
+          return;
+        }
+        isNewRoom = true;
+      }
+
+      const queryParams = new URLSearchParams({
+        participantName: displayName,
+        roomId: meetingRoomId,
+        isNew: isNewRoom ? 'true' : 'false',
+        tutorName: 'General Meeting', 
+        subject: 'Live Session',
+      }).toString();
+      
+      const newSession: StoredSession = {
+        roomId: meetingRoomId,
+        tutorName: 'General Meeting', 
+        subject: 'Live Session',
+        participantName: displayName,
+        timestamp: Date.now()
+      };
+
+      if (!pastSessions.some(s => s.roomId === meetingRoomId)) {
+        saveSessions([...pastSessions, newSession]);
+      } else {
+        const updatedSessions = pastSessions.map(s => 
+          s.roomId === meetingRoomId ? { ...s, timestamp: Date.now() } : s
+        );
+        saveSessions(updatedSessions);
+      }
+
+      router.push(`/room/${meetingRoomId}?${queryParams}`);
+
+    } catch (error) {
+      console.error('Error starting or joining meeting:', error);
+      alert('An error occurred. Please try again.');
+      setIsLoading(false);
+    }
   };
 
   const handleRejoinSession = (session: StoredSession) => {
@@ -140,7 +196,6 @@ export default function Home() {
     
     if (confirmDelete) {
       try {
-        // Try to delete from backend
         try {
           const response = await fetch(`/api/livekit/rooms/${sessionToDelete.roomId}`, {
             method: 'DELETE',
@@ -153,11 +208,9 @@ export default function Home() {
           console.warn('Error during room deletion:', deleteError);
         }
 
-        // Remove from frontend regardless of backend deletion success
         const updatedSessions = pastSessions.filter(s => s.roomId !== sessionToDelete.roomId);
         saveSessions(updatedSessions);
         
-        // Show success message
         alert('Session deleted successfully');
       } catch (error) {
         console.error('Error in session deletion process:', error);
@@ -171,12 +224,12 @@ export default function Home() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            Find Your Perfect Tutor
+            Start or Join a Live Session
           </h1>
-          <p className="text-lg text-gray-600">
-            Connect with expert tutors for personalized learning sessions
+          <p className="text-lg text-gray-600 mb-6">
+            Enter a meeting name to create a new session or leave blank to auto-generate one.
           </p>
-          <div className="mt-6 w-full max-w-md mx-auto">
+          <div className="w-full max-w-md mx-auto space-y-4">
             <Input
               label="Your Name (optional)"
               value={participantName}
@@ -184,6 +237,20 @@ export default function Home() {
               placeholder="Enter your name or leave blank for anonymous"
               disabled={isLoading}
             />
+            <Input
+              label="Meeting Name (Room ID) (optional)"
+              value={roomIdInput}
+              onChange={(e) => setRoomIdInput(e.target.value)}
+              placeholder="Leave blank for auto-generated, or enter to create/join"
+              disabled={isLoading}
+            />
+            <Button
+              onClick={handleStartOrJoinMeeting}
+              disabled={isLoading}
+              className="w-full bg-blue-600 hover:bg-blue-700"
+            >
+              {isLoading ? 'Processing...' : 'Start or Join Meeting'}
+            </Button>
           </div>
         </div>
 
@@ -220,21 +287,6 @@ export default function Home() {
             </div>
           </div>
         )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {tutors.map((tutor) => (
-            <TutorCard
-              key={tutor.name}
-              name={tutor.name}
-              subjects={tutor.subjects}
-              rating={tutor.rating}
-              reviews={tutor.reviews}
-              sessions={tutor.sessions}
-              imageUrl={tutor.imageUrl}
-              onBookSession={handleBookSession}
-            />
-          ))}
-        </div>
       </div>
     </div>
   );

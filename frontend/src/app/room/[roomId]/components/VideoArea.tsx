@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { LocalParticipant, RemoteParticipant, Track } from 'livekit-client';
 
 interface VideoAreaProps {
@@ -8,30 +8,19 @@ interface VideoAreaProps {
 }
 
 export function VideoArea({ localParticipant, remoteParticipants, isAITutor = false }: VideoAreaProps) {
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
+
   // Effect to handle local video
   useEffect(() => {
-    let localVideoElement: HTMLVideoElement | null = null;
-
-    if (localParticipant) {
+    if (localParticipant && localVideoRef.current) {
       const localVideoTrack = localParticipant.getTrackPublication(Track.Source.Camera);
       if (localVideoTrack?.track) {
-        localVideoElement = localVideoTrack.track.attach();
-        const localContainer = document.getElementById('local-participant');
-        if (localContainer) {
-          localContainer.innerHTML = '';
-          localContainer.appendChild(localVideoElement);
-          localVideoElement.style.width = '100%';
-          localVideoElement.style.height = '100%';
-          localVideoElement.style.objectFit = 'cover';
-        }
+        localVideoTrack.track.attach(localVideoRef.current);
       }
     }
 
-    // Cleanup function
     return () => {
-      if (localVideoElement) {
-        localVideoElement.remove();
-      }
       if (localParticipant) {
         const localVideoTrack = localParticipant.getTrackPublication(Track.Source.Camera);
         if (localVideoTrack?.track) {
@@ -43,33 +32,23 @@ export function VideoArea({ localParticipant, remoteParticipants, isAITutor = fa
 
   // Effect to handle remote videos
   useEffect(() => {
-    const videoElements: HTMLVideoElement[] = [];
+    const cleanupFunctions: (() => void)[] = [];
 
     remoteParticipants.forEach(participant => {
-      const remoteVideoTrack = participant.getTrackPublication(Track.Source.Camera);
-      if (remoteVideoTrack?.track) {
-        const videoElement = remoteVideoTrack.track.attach();
-        videoElements.push(videoElement);
-        const remoteContainer = document.getElementById(`participant-${participant.sid}`);
-        if (remoteContainer) {
-          remoteContainer.innerHTML = '';
-          remoteContainer.appendChild(videoElement);
-          videoElement.style.width = '100%';
-          videoElement.style.height = '100%';
-          videoElement.style.objectFit = 'cover';
+      const remoteVideoPublication = participant.getTrackPublication(Track.Source.Camera);
+      if (remoteVideoPublication?.isSubscribed && remoteVideoPublication.track) {
+        const videoElement = remoteVideoRefs.current.get(participant.sid);
+        if (videoElement) {
+          remoteVideoPublication.track.attach(videoElement);
+          cleanupFunctions.push(() => {
+            remoteVideoPublication.track.detach();
+          });
         }
       }
     });
 
-    // Cleanup function
     return () => {
-      videoElements.forEach(element => element.remove());
-      remoteParticipants.forEach(participant => {
-        const remoteVideoTrack = participant.getTrackPublication(Track.Source.Camera);
-        if (remoteVideoTrack?.track) {
-          remoteVideoTrack.track.detach();
-        }
-      });
+      cleanupFunctions.forEach(cleanup => cleanup());
     };
   }, [remoteParticipants]);
 
@@ -78,7 +57,16 @@ export function VideoArea({ localParticipant, remoteParticipants, isAITutor = fa
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Local participant video */}
         <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden">
-          <div id="local-participant" className="w-full h-full" />
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+            You
+          </div>
         </div>
 
         {/* Remote participants videos */}
@@ -87,7 +75,21 @@ export function VideoArea({ localParticipant, remoteParticipants, isAITutor = fa
             key={participant.sid}
             className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden"
           >
-            <div id={`participant-${participant.sid}`} className="w-full h-full" />
+            <video
+              ref={el => {
+                if (el) {
+                  remoteVideoRefs.current.set(participant.sid, el);
+                } else {
+                  remoteVideoRefs.current.delete(participant.sid);
+                }
+              }}
+              autoPlay
+              playsInline
+              className="w-full h-full object-cover"
+            />
+            <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+              {participant.name || participant.identity}
+            </div>
           </div>
         ))}
       </div>

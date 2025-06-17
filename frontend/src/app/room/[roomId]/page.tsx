@@ -9,7 +9,7 @@ import { ChatArea } from './components/ChatArea';
 import { Controls } from './components/Controls';
 import { PreJoinPage } from './components/PreJoinPage';
 import { connectToRoom, leaveRoom, RoomInfo } from './utils/roomConnection';
-import { Room, RemoteParticipant, LocalParticipant, RemoteTrack, ConnectionState } from 'livekit-client';
+import { Room, RemoteParticipant, LocalParticipant, RemoteTrack, ConnectionState, RoomEvent, Track, RemoteTrackPublication } from 'livekit-client';
 
 export default function RoomPage({ params }: { params: Promise<{ roomId: string }> }) {
   const resolvedParams = use(params);
@@ -26,9 +26,11 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
   const [messages, setMessages] = useState<Array<{ sender: string; message: string }>>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isPreJoin, setIsPreJoin] = useState(true);
+  const [maxParticipants, setMaxParticipants] = useState(2);
   const isAITutor = searchParams.get('isAITutor') === 'true';
 
   const handleConnectionStateChange = (state: ConnectionState) => {
+    console.log('Connection state changed:', state);
     setIsConnected(state === ConnectionState.Connected);
     
     if (state === ConnectionState.Disconnected) {
@@ -44,6 +46,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
     setRemoteParticipants(prev => {
       const existing = prev.find(p => p.identity === participant.identity);
       if (!existing) {
+        console.log(`Participant connected: ${participant.identity}`);
         return [...prev, participant];
       }
       return prev;
@@ -55,18 +58,11 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
   };
 
   const handleTrackSubscribed = (track: RemoteTrack, publication: any, participant: RemoteParticipant) => {
-    const element = track.attach();
-    const container = document.getElementById(`participant-${participant.sid}`);
-    if (container) {
-      container.innerHTML = '';
-      container.appendChild(element);
-      element.style.width = '100%';
-      element.style.height = '100%';
-      element.style.objectFit = 'cover';
-    }
+    console.log(`Track subscribed: ${track.kind} for ${participant.identity} (SID: ${participant.sid})`);
   };
 
   const handleTrackUnsubscribed = (track: RemoteTrack, publication: any, participant: RemoteParticipant) => {
+    console.log(`Track unsubscribed: ${track.kind} for ${participant.identity}`);
     track.detach().forEach(element => element.remove());
   };
 
@@ -91,13 +87,32 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
         handleDataReceived
       );
 
+      // Set room and local participant immediately
       setRoom(newRoom);
       setLocalParticipant(newLocalParticipant);
       setIsConnected(true);
       setError(null);
+
+      // Re-add event listeners directly to the room object for clearer reactivity
+      newRoom.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
+      newRoom.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+      newRoom.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
+      newRoom.on(RoomEvent.TrackUnsubscribed, handleTrackUnsubscribed);
+      newRoom.on(RoomEvent.DataReceived, handleDataReceived);
+      newRoom.on(RoomEvent.ConnectionStateChanged, handleConnectionStateChange);
+
+      // Handle participants already in the room when connecting
+      // Set remote participants first to ensure VideoArea renders their containers
+      const initialRemoteParticipants: RemoteParticipant[] = Array.from(newRoom.remoteParticipants.values());
+      setRemoteParticipants(initialRemoteParticipants);
+
     } catch (err) {
       console.error('Connection error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to connect to room');
+      if (err instanceof Error && err.message.includes('room is full')) {
+        setError('Room is at maximum capacity. Please try again later.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to connect to room');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -275,6 +290,12 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
               <p className="text-gray-600">
                 with {roomInfo?.tutorName}
                 {isAITutor && <span className="ml-2 text-blue-600">(AI Tutor)</span>}
+              </p>
+              <p className="text-sm text-gray-500 mt-2">
+                Participants: {remoteParticipants.length + 1}/{maxParticipants}
+                {remoteParticipants.length + 1 >= maxParticipants && (
+                  <span className="ml-2 text-red-500">(Room Full)</span>
+                )}
               </p>
             </div>
             <div className="text-right">
