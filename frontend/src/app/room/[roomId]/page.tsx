@@ -10,6 +10,9 @@ import { Controls } from './components/Controls';
 import { PreJoinPage } from './components/PreJoinPage';
 import { connectToRoom, leaveRoom, RoomInfo } from './utils/roomConnection';
 import { Room, RemoteParticipant, LocalParticipant, RemoteTrack, ConnectionState, RoomEvent, Track, RemoteTrackPublication } from 'livekit-client';
+import { useCallback } from 'react';
+import { io } from 'socket.io-client';
+import { RemoteVideoArea } from './components/RemoteVideoArea';
 
 export default function RoomPage({ params }: { params: Promise<{ roomId: string }> }) {
   const resolvedParams = use(params);
@@ -28,6 +31,9 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
   const [isPreJoin, setIsPreJoin] = useState(true);
   const [maxParticipants, setMaxParticipants] = useState(2);
   const isAITutor = searchParams.get('isAITutor') === 'true';
+  const [transcript, setTranscript] = useState('');
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [socket, setSocket] = useState<any>(null);
 
   const handleConnectionStateChange = (state: ConnectionState) => {
     console.log('Connection state changed:', state);
@@ -188,6 +194,90 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
     }
   };
 
+  // Initialize Socket.IO connection
+  useEffect(() => {
+    const socket = io('http://localhost:5000');
+    setSocket(socket);
+
+    socket.on('connect', () => {
+      console.log('Connected to transcription server');
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Disconnected from transcription server');
+    });
+
+    socket.on('transcription', (data: { text: string }) => {
+      setTranscript(prev => prev + ' ' + data.text);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  // Join room when connected
+  useEffect(() => {
+    if (socket && room) {
+      socket.emit('join_room', { room_name: room.name });
+    }
+  }, [socket, room]);
+
+  const startTranscription = useCallback(async () => {
+    try {
+      if (!room) {
+        throw new Error('Room not connected');
+      }
+
+      const response = await fetch('http://localhost:5000/api/transcription/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ room_name: room.name }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to start transcription');
+      }
+
+      setIsTranscribing(true);
+    } catch (error) {
+      console.error('Error starting transcription:', error);
+    }
+  }, [room]);
+
+  const stopTranscription = useCallback(async () => {
+    try {
+      if (room) {
+        const response = await fetch('http://localhost:5000/api/transcription/stop', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ room_name: room.name }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to stop transcription');
+        }
+
+        setIsTranscribing(false);
+      }
+    } catch (error) {
+      console.error('Error stopping transcription:', error);
+    }
+  }, [room]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (isTranscribing) {
+        stopTranscription();
+      }
+    };
+  }, [isTranscribing, stopTranscription]);
+
   useEffect(() => {
     const tutorName = searchParams.get('tutorName');
     const subject = searchParams.get('subject');
@@ -278,78 +368,71 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header with session info */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {roomInfo?.subject} Session
-              </h1>
-              <p className="text-gray-600">
-                with {roomInfo?.tutorName}
-                {isAITutor && <span className="ml-2 text-blue-600">(AI Tutor)</span>}
-              </p>
-              <p className="text-sm text-gray-500 mt-2">
-                Participants: {remoteParticipants.length + 1}/{maxParticipants}
-                {remoteParticipants.length + 1 >= maxParticipants && (
-                  <span className="ml-2 text-red-500">(Room Full)</span>
-                )}
-              </p>
-            </div>
-            <div className="text-right">
-              <div className="flex items-center space-x-2">
-                <div>
-                  <p className="text-sm text-gray-500">Session ID</p>
-                  <p className="font-mono text-sm bg-gray-100 px-2 py-1 rounded">
-                    {resolvedParams.roomId}
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(resolvedParams.roomId);
-                    const button = document.getElementById('copyButton');
-                    if (button) {
-                      const originalText = button.textContent;
-                      button.textContent = 'Copied!';
-                      button.classList.add('bg-green-600');
-                      setTimeout(() => {
-                        button.textContent = originalText;
-                        button.classList.remove('bg-green-600');
-                      }, 2000);
-                    }
-                  }}
-                  id="copyButton"
-                  className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                >
-                  Copy ID
-                </button>
-              </div>
-            </div>
-          </div>
+    <div className="w-screen h-screen overflow-hidden flex flex-col" style={{ minHeight: '100vh', minWidth: '100vw' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 bg-white bg-opacity-80 rounded-b-lg shadow-md m-4 flex-shrink-0">
+        <div className="flex-1">
+          <input
+            type="text"
+            value={roomInfo?.tutorName ? `${roomInfo.tutorName} - session` : 'AI Tutor name - session'}
+            className="w-full px-4 py-2 rounded bg-gray-100 text-lg font-semibold"
+            readOnly
+          />
         </div>
+        <div className="mx-4 flex-1">
+          <input
+            type="text"
+            value={resolvedParams.roomId || ''}
+            className="w-full px-4 py-2 rounded bg-gray-100 text-lg"
+            readOnly
+            placeholder="room name:"
+          />
+        </div>
+        <button
+          onClick={handleLeaveSession}
+          className="px-6 py-2 bg-red-600 text-white rounded-lg text-lg font-semibold shadow hover:bg-red-700 transition-colors"
+        >
+          leave session
+        </button>
+      </div>
 
-        {/* Main content area */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Video area */}
-          <div className="lg:col-span-2">
-            <VideoArea
-              localParticipant={localParticipant}
-              remoteParticipants={remoteParticipants}
-              isAITutor={isAITutor}
-            />
+      {/* Main content area */}
+      <div className="flex flex-1 gap-4 px-6 pb-4 h-0 min-h-0 overflow-hidden">
+        {/* Left side: Camera and chat */}
+        <div className="flex flex-col flex-[2] gap-4 min-h-0 overflow-hidden">
+          {/* Main webcam area */}
+          <div className="flex-1 bg-gray-200 rounded-lg flex items-center justify-center relative min-h-0 overflow-hidden">
+            {/* Integrate VideoArea for main webcam */}
+            <div className="w-full h-full flex items-center justify-center">
+              <VideoArea
+                localParticipant={localParticipant}
+                remoteParticipants={remoteParticipants}
+                isAITutor={isAITutor}
+              />
+            </div>
+            {/* Student webcam controls (Controls) */}
+            <div className="absolute bottom-4 left-4">
+              <Controls
+                isAudioEnabled={isAudioEnabled}
+                isVideoEnabled={isVideoEnabled}
+                isConnected={isConnected}
+                onToggleAudio={handleToggleAudio}
+                onToggleVideo={handleToggleVideo}
+                onLeaveSession={handleLeaveSession}
+                isAITutor={isAITutor}
+              />
+            </div>
+            {/* Web cam 2 (red box) - only show if remote participant exists */}
+            {remoteParticipants.length > 0 && (
+              <div className="absolute bottom-4 right-4">
+                <div className="bg-red-500 text-white px-10 py-8 rounded-lg text-2xl font-semibold shadow min-w-[220px] min-h-[120px] flex items-center justify-center">
+                  <RemoteVideoArea participant={remoteParticipants[0]} />
+                </div>
+              </div>
+            )}
           </div>
-
-          {/* Sidebar */}
-          <div className="space-y-6">
-            <ParticipantList
-              participantName={roomInfo?.participantName || ''}
-              tutorName={roomInfo?.tutorName || ''}
-              remoteParticipants={remoteParticipants}
-              isAITutor={isAITutor}
-            />
-
+          {/* Chat area below webcam, does not extend under whiteboard */}
+          <div className="flex-shrink-0">
             <ChatArea
               messages={messages}
               newMessage={newMessage}
@@ -357,17 +440,11 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
               onSendMessage={handleSendMessage}
               isAITutor={isAITutor}
             />
-
-            <Controls
-              isAudioEnabled={isAudioEnabled}
-              isVideoEnabled={isVideoEnabled}
-              isConnected={isConnected}
-              onToggleAudio={handleToggleAudio}
-              onToggleVideo={handleToggleVideo}
-              onLeaveSession={handleLeaveSession}
-              isAITutor={isAITutor}
-            />
           </div>
+        </div>
+        {/* Whiteboard area, full right portion from top to bottom */}
+        <div className="flex-1 bg-black rounded-lg flex items-center justify-center text-3xl font-medium text-white min-h-0 overflow-hidden">
+          white board
         </div>
       </div>
     </div>

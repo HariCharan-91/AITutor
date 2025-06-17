@@ -7,129 +7,50 @@ interface VideoAreaProps {
   isAITutor?: boolean;
 }
 
-export function VideoArea({ localParticipant, remoteParticipants, isAITutor = false }: VideoAreaProps) {
+export function VideoArea({ localParticipant }: VideoAreaProps) {
   const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const [localVideoError, setLocalVideoError] = useState<string | null>(null);
-  const [remoteVideoErrors, setRemoteVideoErrors] = useState<Map<string, string>>(new Map());
 
   // Effect to handle local video
   useEffect(() => {
     const setupLocalVideo = async () => {
       if (!localParticipant) {
-        console.log('No local participant available');
         return;
       }
-
       if (!localVideoRef.current) {
-        console.log('No local video element available');
         return;
       }
-
       try {
-        console.log('Setting up local video...');
-        
-        // First ensure camera is enabled
         await localParticipant.setCameraEnabled(true);
-        console.log('Camera enabled');
-
-        // Wait for the track to be available
         const waitForTrack = async () => {
           let attempts = 0;
           while (attempts < 10) {
             const localVideoTrack = localParticipant.getTrackPublication(Track.Source.Camera);
-            console.log('Checking local video track:', localVideoTrack);
-            
             if (localVideoTrack?.track) {
-              console.log('Local video track found, attaching...');
               localVideoTrack.track.attach(localVideoRef.current!);
               setLocalVideoError(null);
               return;
             }
-            
             attempts++;
             await new Promise(resolve => setTimeout(resolve, 500));
           }
           throw new Error('Local video track not available after multiple attempts');
         };
-
         await waitForTrack();
       } catch (error) {
-        console.error('Error setting up local video:', error);
         setLocalVideoError('Failed to setup video');
       }
     };
-
     setupLocalVideo();
-
     return () => {
       if (localParticipant) {
         const localVideoTrack = localParticipant.getTrackPublication(Track.Source.Camera);
         if (localVideoTrack?.track) {
-          console.log('Detaching local video track');
           localVideoTrack.track.detach();
         }
       }
     };
   }, [localParticipant]);
-
-  // Effect to handle remote videos
-  useEffect(() => {
-    const setupRemoteVideos = async () => {
-      const cleanupFunctions: (() => void)[] = [];
-      const newErrors = new Map<string, string>();
-
-      for (const participant of remoteParticipants) {
-        try {
-          console.log(`Setting up video for participant ${participant.identity}...`);
-          
-          // Wait for the track to be available
-          const waitForTrack = async () => {
-            let attempts = 0;
-            while (attempts < 10) {
-              const remoteVideoPublication = participant.getTrackPublication(Track.Source.Camera);
-              console.log('Checking remote video publication:', remoteVideoPublication);
-              
-              if (remoteVideoPublication?.isSubscribed && remoteVideoPublication.track) {
-                const videoElement = remoteVideoRefs.current.get(participant.sid);
-                if (videoElement) {
-                  console.log('Remote video track found, attaching...');
-                  remoteVideoPublication.track.attach(videoElement);
-                  cleanupFunctions.push(() => {
-                    console.log('Detaching remote video track');
-                    remoteVideoPublication.track.detach();
-                  });
-                  newErrors.delete(participant.sid);
-                  return;
-                } else {
-                  console.warn(`No video element found for participant ${participant.identity}`);
-                  newErrors.set(participant.sid, 'No video element available');
-                  return;
-                }
-              }
-              
-              attempts++;
-              await new Promise(resolve => setTimeout(resolve, 500));
-            }
-            throw new Error('Remote video track not available after multiple attempts');
-          };
-
-          await waitForTrack();
-        } catch (error) {
-          console.error(`Error setting up video for participant ${participant.identity}:`, error);
-          newErrors.set(participant.sid, 'Failed to setup video');
-        }
-      }
-
-      setRemoteVideoErrors(newErrors);
-
-      return () => {
-        cleanupFunctions.forEach(cleanup => cleanup());
-      };
-    };
-
-    setupRemoteVideos();
-  }, [remoteParticipants]);
 
   const getParticipantDisplayName = (participant: LocalParticipant | RemoteParticipant) => {
     if (participant.name) {
@@ -164,56 +85,22 @@ export function VideoArea({ localParticipant, remoteParticipants, isAITutor = fa
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Local participant video */}
-        <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden">
-          <video
-            ref={localVideoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
-            {localParticipant ? `${getParticipantDisplayName(localParticipant)} (You)` : 'You'}
-          </div>
-          {localVideoError && (
-            <div className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-sm">
-              {localVideoError}
-            </div>
-          )}
-        </div>
-
-        {/* Remote participants videos */}
-        {remoteParticipants.map(participant => (
-          <div
-            key={participant.sid}
-            className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden"
-          >
-            <video
-              ref={el => {
-                if (el) {
-                  remoteVideoRefs.current.set(participant.sid, el);
-                } else {
-                  remoteVideoRefs.current.delete(participant.sid);
-                }
-              }}
-              autoPlay
-              playsInline
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
-              {`${getParticipantDisplayName(participant)} (${getParticipantRole(participant)})`}
-            </div>
-            {remoteVideoErrors.get(participant.sid) && (
-              <div className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-sm">
-                {remoteVideoErrors.get(participant.sid)}
-              </div>
-            )}
-          </div>
-        ))}
+    <div className="w-full h-full relative bg-gray-100 rounded-lg overflow-hidden">
+      <video
+        ref={localVideoRef}
+        autoPlay
+        playsInline
+        muted
+        className="w-full h-full object-cover"
+      />
+      <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+        {localParticipant ? 'You' : ''}
       </div>
+      {localVideoError && (
+        <div className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-sm">
+          {localVideoError}
+        </div>
+      )}
     </div>
   );
 } 

@@ -1,4 +1,10 @@
-livekit-api
-python-dotenv 
-flask
-pytest
+livekit-api==1.0.2
+python-dotenv==1.1.0
+flask==3.1.1
+pytest==8.4.0
+websockets==11.0.3
+python-multipart==0.0.6
+livekit-agents[assemblyai]~=1.0
+flask-cors==4.0.0
+nest-asyncio>=1.6.0
+flask-socketio==5.3.6
