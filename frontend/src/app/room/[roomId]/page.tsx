@@ -65,6 +65,15 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
 
   const handleTrackSubscribed = (track: RemoteTrack, publication: any, participant: RemoteParticipant) => {
     console.log(`Track subscribed: ${track.kind} for ${participant.identity} (SID: ${participant.sid})`);
+    
+    // Debug audio tracks
+    if (track.kind === 'audio') {
+      console.log('Audio track details:', {
+        participant: participant.identity,
+        trackId: track.sid,
+        isMuted: track.isMuted
+      });
+    }
   };
 
   const handleTrackUnsubscribed = (track: RemoteTrack, publication: any, participant: RemoteParticipant) => {
@@ -99,6 +108,9 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
       setIsConnected(true);
       setError(null);
 
+      // Debug local audio tracks
+      console.log('Local participant identity:', newLocalParticipant.identity);
+
       // Re-add event listeners directly to the room object for clearer reactivity
       newRoom.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
       newRoom.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
@@ -111,6 +123,11 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
       // Set remote participants first to ensure VideoArea renders their containers
       const initialRemoteParticipants: RemoteParticipant[] = Array.from(newRoom.remoteParticipants.values());
       setRemoteParticipants(initialRemoteParticipants);
+      
+      // Debug remote participants
+      console.log('Initial remote participants:', initialRemoteParticipants.map(p => ({
+        identity: p.identity
+      })));
 
     } catch (err) {
       console.error('Connection error:', err);

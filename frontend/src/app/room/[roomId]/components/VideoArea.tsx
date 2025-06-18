@@ -7,8 +7,9 @@ interface VideoAreaProps {
   isAITutor?: boolean;
 }
 
-export function VideoArea({ localParticipant }: VideoAreaProps) {
+export function VideoArea({ localParticipant, remoteParticipants }: VideoAreaProps) {
   const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
   const [localVideoError, setLocalVideoError] = useState<string | null>(null);
 
   // Effect to handle local video
@@ -52,6 +53,46 @@ export function VideoArea({ localParticipant }: VideoAreaProps) {
     };
   }, [localParticipant]);
 
+  // Effect to handle remote audio tracks
+  useEffect(() => {
+    const setupRemoteAudio = async () => {
+      const cleanupFunctions: (() => void)[] = [];
+
+      for (const participant of remoteParticipants) {
+        try {
+          const waitForTrack = async () => {
+            let attempts = 0;
+            while (attempts < 10) {
+              const remoteAudioPublication = participant.getTrackPublication(Track.Source.Microphone);
+              if (remoteAudioPublication?.isSubscribed && remoteAudioPublication.track) {
+                const audioElement = remoteAudioRefs.current.get(participant.sid);
+                if (audioElement) {
+                  console.log(`Attaching audio for participant ${participant.identity}`);
+                  remoteAudioPublication.track.attach(audioElement);
+                  cleanupFunctions.push(() => {
+                    remoteAudioPublication.track.detach();
+                  });
+                  return;
+                }
+              }
+              attempts++;
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          };
+          await waitForTrack();
+        } catch (error) {
+          console.error(`Error setting up audio for participant ${participant.identity}:`, error);
+        }
+      }
+
+      return () => {
+        cleanupFunctions.forEach(cleanup => cleanup());
+      };
+    };
+
+    setupRemoteAudio();
+  }, [remoteParticipants]);
+
   const getParticipantDisplayName = (participant: LocalParticipant | RemoteParticipant) => {
     if (participant.name) {
       return participant.name;
@@ -86,21 +127,38 @@ export function VideoArea({ localParticipant }: VideoAreaProps) {
 
   return (
     <div className="w-full h-full relative bg-gray-100 rounded-lg overflow-hidden">
-          <video
-            ref={localVideoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+      <video
+        ref={localVideoRef}
+        autoPlay
+        playsInline
+        muted
+        className="w-full h-full object-cover"
+      />
+      <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
         {localParticipant ? 'You' : ''}
-          </div>
-          {localVideoError && (
-            <div className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-sm">
-              {localVideoError}
-            </div>
-          )}
+      </div>
+      {localVideoError && (
+        <div className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-sm">
+          {localVideoError}
+        </div>
+      )}
+      
+      {/* Audio elements for remote participants */}
+      {remoteParticipants.map(participant => (
+        <audio
+          key={participant.sid}
+          ref={el => {
+            if (el) {
+              remoteAudioRefs.current.set(participant.sid, el);
+            } else {
+              remoteAudioRefs.current.delete(participant.sid);
+            }
+          }}
+          autoPlay
+          playsInline
+          style={{ display: 'none' }}
+        />
+      ))}
     </div>
   );
 } 
