@@ -368,14 +368,14 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
   }
 
   return (
-    <div className="w-screen h-screen overflow-hidden flex flex-col" style={{ minHeight: '100vh', minWidth: '100vw' }}>
+    <div className="w-screen h-screen overflow-hidden flex flex-col bg-gradient-to-br from-blue-900 via-blue-700 to-blue-400" style={{ minHeight: '100vh', minWidth: '100vw' }}>
       {/* Header */}
       <div className="flex items-center justify-between p-4 bg-white bg-opacity-80 rounded-b-lg shadow-md m-4 flex-shrink-0">
         <div className="flex-1">
           <input
             type="text"
             value={roomInfo?.tutorName ? `${roomInfo.tutorName} - session` : 'AI Tutor name - session'}
-            className="w-full px-4 py-2 rounded bg-gray-100 text-lg font-semibold"
+            className="w-full px-4 py-2 rounded bg-gray-100 text-lg font-semibold text-black font-bold"
             readOnly
           />
         </div>
@@ -383,14 +383,14 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
           <input
             type="text"
             value={resolvedParams.roomId || ''}
-            className="w-full px-4 py-2 rounded bg-gray-100 text-lg"
+            className="w-full px-4 py-2 rounded bg-gray-100 text-lg text-black font-bold"
             readOnly
             placeholder="room name:"
           />
         </div>
         <button
           onClick={handleLeaveSession}
-          className="px-6 py-2 bg-red-600 text-white rounded-lg text-lg font-semibold shadow hover:bg-red-700 transition-colors"
+          className="px-6 py-2 bg-red-600 text-white rounded-lg text-lg font-semibold shadow hover:bg-red-700 transition-colors font-bold"
         >
           leave session
         </button>
@@ -410,24 +410,22 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
                 isAITutor={isAITutor}
               />
             </div>
-            {/* Student webcam controls (Controls) */}
-            <div className="absolute bottom-4 left-4">
+            {/* Controls centered at the bottom of the main webcam area, no white background, no Leave Session button */}
+            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10">
               <Controls
                 isAudioEnabled={isAudioEnabled}
                 isVideoEnabled={isVideoEnabled}
                 isConnected={isConnected}
                 onToggleAudio={handleToggleAudio}
                 onToggleVideo={handleToggleVideo}
-                onLeaveSession={handleLeaveSession}
                 isAITutor={isAITutor}
+                hideLeaveSession={true}
               />
             </div>
-            {/* Web cam 2 (red box) - only show if remote participant exists */}
+            {/* Web cam 2 (remote participant) - no red background */}
             {remoteParticipants.length > 0 && (
-              <div className="absolute bottom-4 right-4">
-                <div className="bg-red-500 text-white px-10 py-8 rounded-lg text-2xl font-semibold shadow min-w-[220px] min-h-[120px] flex items-center justify-center">
-                  <RemoteVideoArea participant={remoteParticipants[0]} />
-                </div>
+              <div className="absolute bottom-4 right-4 z-10 min-w-[220px] min-h-[120px] flex items-center justify-center">
+                <RemoteVideoArea participant={remoteParticipants[0]} />
               </div>
             )}
           </div>

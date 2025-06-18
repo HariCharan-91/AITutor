@@ -6,8 +6,9 @@ interface ControlsProps {
   isConnected: boolean;
   onToggleAudio: () => void;
   onToggleVideo: () => void;
-  onLeaveSession: () => void;
+  onLeaveSession?: () => void;
   isAITutor?: boolean;
+  hideLeaveSession?: boolean;
 }
 
 export function Controls({
@@ -17,10 +18,11 @@ export function Controls({
   onToggleAudio,
   onToggleVideo,
   onLeaveSession,
-  isAITutor = false
+  isAITutor = false,
+  hideLeaveSession = false
 }: ControlsProps) {
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div>
       <div className="flex justify-center space-x-4">
         <Button
           onClick={onToggleAudio}
@@ -36,12 +38,14 @@ export function Controls({
         >
           {isVideoEnabled ? 'Stop Video' : 'Start Video'}
         </Button>
-        <Button
-          onClick={onLeaveSession}
-          className="bg-red-600 hover:bg-red-700"
-        >
-          Leave Session
-        </Button>
+        {!hideLeaveSession && onLeaveSession && (
+          <Button
+            onClick={onLeaveSession}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            Leave Session
+          </Button>
+        )}
       </div>
     </div>
   );

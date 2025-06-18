@@ -58,7 +58,7 @@ export function ChatArea({ messages, newMessage, onNewMessageChange, onSendMessa
             onChange={(e) => onNewMessageChange(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && onSendMessage()}
             placeholder="Type a message..."
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
           />
           <Button onClick={onSendMessage}>Send</Button>
         </div>
