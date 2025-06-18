@@ -208,7 +208,9 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
     });
 
     socket.on('transcription', (data: { text: string }) => {
-      setTranscript(prev => prev + ' ' + data.text);
+      console.log('Received transcription event:', JSON.stringify(data));
+      console.log('Received transcription:', data.text);
+      setMessages(prev => [...prev, { sender: 'AI', message: data.text }]);
     });
 
     return () => {
@@ -226,22 +228,27 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
   const startTranscription = useCallback(async () => {
     try {
       if (!room) {
+        console.error('Room not connected');
         throw new Error('Room not connected');
       }
-
+      console.log('Mic button pressed, attempting to start transcription...');
+      const payload = { room_name: room.name };
+      console.log('Sending POST to /api/transcription/start with payload:', payload);
       const response = await fetch('http://localhost:5000/api/transcription/start', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ room_name: room.name }),
+        body: JSON.stringify(payload),
       });
-
+      console.log('Backend response:', response.status, response.statusText);
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Failed to start transcription:', errorText);
         throw new Error('Failed to start transcription');
       }
-
       setIsTranscribing(true);
+      console.log('Transcription has started. Listening for speech...');
     } catch (error) {
       console.error('Error starting transcription:', error);
     }
@@ -300,6 +307,14 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
       }
     };
   }, [resolvedParams.roomId, searchParams]);
+
+  const handleMicClick = () => {
+    if (isTranscribing) {
+      stopTranscription();
+    } else {
+      startTranscription();
+    }
+  };
 
   if (isPreJoin) {
     return (
@@ -437,6 +452,7 @@ export default function RoomPage({ params }: { params: Promise<{ roomId: string 
               onNewMessageChange={setNewMessage}
               onSendMessage={handleSendMessage}
               isAITutor={isAITutor}
+              onMicClick={handleMicClick}
             />
           </div>
         </div>

@@ -1,12 +1,11 @@
-from flask import Flask
-from app.routes.livekit import livekit_bp
+from app import create_app, socketio
 
-app = Flask(__name__)
-app.register_blueprint(livekit_bp)
+app = create_app()
 
 @app.route("/")
 def root():
     return {"message": "LiveKit Flask Server is running"}
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True) 
+    # Use socketio.run for proper websocket and CORS support
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True) 

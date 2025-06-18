@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from flask_socketio import SocketIO, emit, join_room
 from ..services.transcription_service import TranscriptionService
 from typing import Dict
+import traceback
 
 transcription_bp = Blueprint('transcription', __name__, url_prefix='/api/transcription')
 socketio = SocketIO()
@@ -29,6 +30,7 @@ def start_transcription():
         success = service.start_transcription(room_name, on_transcript)
         
         if not success:
+            print('Failed to start transcription (service returned False)')
             return jsonify({'error': 'Failed to start transcription'}), 500
         
         # Store the service
@@ -37,6 +39,8 @@ def start_transcription():
         return jsonify({'status': 'success', 'message': 'Transcription started'})
         
     except Exception as e:
+        print('Exception in /start transcription:', e)
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @transcription_bp.route('/stop', methods=['POST'])
@@ -62,6 +66,8 @@ def stop_transcription():
         return jsonify({'status': 'success', 'message': 'Transcription stopped'})
         
     except Exception as e:
+        print('Exception in /stop transcription:', e)
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @socketio.on('connect')

@@ -13,9 +13,9 @@ def create_app():
     """Application factory for Flask app."""
     app = Flask(__name__)
     
-    # Enable CORS with more specific configuration
+    # Enable CORS for all routes and SocketIO
     CORS(app, 
-         resources={r"/api/*": {
+         resources={r"/*": {
              "origins": ["http://localhost:3000"],
              "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
              "allow_headers": ["Content-Type", "Authorization"],
@@ -28,7 +28,7 @@ def create_app():
     # Load config
     app.config.from_object(Config)
 
-    # Initialize SocketIO
+    # Initialize SocketIO with CORS allowed for frontend
     socketio.init_app(app, cors_allowed_origins=["http://localhost:3000"])
 
     # Register blueprints

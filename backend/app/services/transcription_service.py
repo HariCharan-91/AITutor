@@ -28,6 +28,12 @@ class TranscriptionService:
     def start_transcription(self, room_name: str, on_transcript: Callable[[str], None]) -> bool:
         """Start transcription using LiveKit Agents with AssemblyAI"""
         try:
+            print('Starting transcription for room:', room_name)
+            print('ASSEMBLYAI_API_KEY:', 'set' if self.api_key else 'NOT SET')
+            print('LIVEKIT_HOST:', self.livekit_host)
+            print('LIVEKIT_API_KEY:', 'set' if self.livekit_api_key else 'NOT SET')
+            print('LIVEKIT_API_SECRET:', 'set' if self.livekit_api_secret else 'NOT SET')
+
             # Create event loop if it doesn't exist
             try:
                 self._loop = asyncio.get_event_loop()
@@ -35,11 +41,8 @@ class TranscriptionService:
                 self._loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(self._loop)
 
-            # Create an AgentSession with AssemblyAI STT
+            print('Creating AgentSession...')
             self.session = AgentSession(
-                url=self.livekit_host,
-                api_key=self.livekit_api_key,
-                api_secret=self.livekit_api_secret,
                 stt=assemblyai.STT(
                     api_key=self.api_key,
                     end_of_turn_confidence_threshold=0.7,
@@ -48,18 +51,18 @@ class TranscriptionService:
                 ),
                 turn_detection="stt"
             )
+            print('AgentSession created.')
 
             self.on_transcript = on_transcript
 
-            # Connect to the room
-            self._loop.run_until_complete(self.session.join(room_name))
-
-            # Start listening for transcription events
+            print('Setting up transcript event handler...')
             self.session.on("transcript", self._handle_transcript)
+            print('Transcript event handler set.')
 
             return True
         except Exception as e:
             print(f"Error starting transcription: {e}")
+            import traceback; traceback.print_exc()
             if self.session:
                 try:
                     self._loop.run_until_complete(self.session.leave())
@@ -77,7 +80,8 @@ class TranscriptionService:
         """Stop the transcription service"""
         if self.session:
             try:
-                self._loop.run_until_complete(self.session.leave())
+                print("Stopping AgentSession (no leave method available).")
+                # No leave/close method in AgentSession; just clear the session
             except Exception as e:
                 print(f"Error stopping transcription: {e}")
             finally:

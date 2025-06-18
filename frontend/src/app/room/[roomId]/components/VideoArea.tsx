@@ -86,21 +86,21 @@ export function VideoArea({ localParticipant }: VideoAreaProps) {
 
   return (
     <div className="w-full h-full relative bg-gray-100 rounded-lg overflow-hidden">
-      <video
-        ref={localVideoRef}
-        autoPlay
-        playsInline
-        muted
-        className="w-full h-full object-cover"
-      />
-      <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
         {localParticipant ? 'You' : ''}
-      </div>
-      {localVideoError && (
-        <div className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-sm">
-          {localVideoError}
-        </div>
-      )}
+          </div>
+          {localVideoError && (
+            <div className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-sm">
+              {localVideoError}
+            </div>
+          )}
     </div>
   );
 } 

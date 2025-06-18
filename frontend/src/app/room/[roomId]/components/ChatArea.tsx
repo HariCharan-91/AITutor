@@ -1,5 +1,4 @@
 import { Button } from '@/components/ui/Button';
-import { useState } from 'react';
 
 interface ChatAreaProps {
   messages: Array<{ sender: string; message: string }>;
@@ -7,17 +6,10 @@ interface ChatAreaProps {
   onNewMessageChange: (message: string) => void;
   onSendMessage: () => void;
   isAITutor?: boolean;
+  onMicClick?: () => void;
 }
 
-export function ChatArea({ messages, newMessage, onNewMessageChange, onSendMessage, isAITutor = false }: ChatAreaProps) {
-  const [isListening, setIsListening] = useState(false);
-
-  // Placeholder for speech-to-text logic
-  const handleSpeech = () => {
-    setIsListening((prev) => !prev);
-    // Add speech-to-text logic here
-  };
-
+export function ChatArea({ messages, newMessage, onNewMessageChange, onSendMessage, isAITutor = false, onMicClick }: ChatAreaProps) {
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
       <h2 className="text-lg font-semibold text-gray-900 mb-4">Chat</h2>
@@ -43,14 +35,11 @@ export function ChatArea({ messages, newMessage, onNewMessageChange, onSendMessa
         </div>
         <div className="flex space-x-2 items-center">
           <button
-            onClick={handleSpeech}
-            className={`w-10 h-10 flex items-center justify-center rounded-full border border-gray-300 bg-gray-100 hover:bg-blue-100 transition-colors ${isListening ? 'ring-2 ring-blue-400' : ''}`}
-            aria-label="Speech to text"
+            className="w-10 h-10 flex items-center justify-center rounded-full border border-gray-300 bg-gray-100 hover:bg-blue-100 transition-colors text-2xl font-bold text-blue-600"
+            aria-label="Add"
             type="button"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75v1.5m0 0h3.375m-3.375 0H8.625M12 3.75v9m0 0a3 3 0 01-3 3m3-3a3 3 0 003 3m-7.5 0a7.5 7.5 0 0015 0" />
-            </svg>
+            +
           </button>
           <input
             type="text"
@@ -60,6 +49,16 @@ export function ChatArea({ messages, newMessage, onNewMessageChange, onSendMessa
             placeholder="Type a message..."
             className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-black"
           />
+          <button
+            onClick={onMicClick}
+            className="w-10 h-10 flex items-center justify-center rounded-full border border-gray-300 bg-gray-100 hover:bg-blue-100 transition-colors"
+            aria-label="Speech to text"
+            type="button"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="#2563eb" viewBox="0 0 24 24" stroke="none" className="w-6 h-6">
+              <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.92V21a1 1 0 1 0 2 0v-2.08A7 7 0 0 0 17 12z" />
+            </svg>
+          </button>
           <Button onClick={onSendMessage}>Send</Button>
         </div>
       </div>
